@@ -23,3 +23,6 @@ thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 unicode-segmentation = "1.13"
+
+[dev-dependencies]
+proptest = "1.12"
