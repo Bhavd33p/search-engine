@@ -157,18 +157,17 @@ Every word goes through the same analyser as the documents, so `Foxes` matches
 
 ## Benchmarks
 
-Measured on an Apple M5 Pro laptop (run 1 of 3; the other runs agree within a
-few percent). Full methodology, commands, all three runs and caveats are in
-[BENCHMARKS.md](BENCHMARKS.md).
+Measured on an Apple M5 Pro laptop (run 1 of 3). Full methodology, commands,
+all three runs with their spread, and caveats are in [BENCHMARKS.md](BENCHMARKS.md).
 
 | | Rust docs crawl (300 pages) | Cranfield (1,400 docs) |
 |---|---:|---:|
-| Index build, total (median of 3) | 0.058 s (5,185 docs/s) | 0.054 s (25,778 docs/s) |
+| Index build, total (median of 3) | 0.060 s (4,997 docs/s) | 0.058 s (24,123 docs/s) |
 | Posting lists, VByte vs fixed-width `u32` | 315,504 vs 971,256 bytes (3.08× smaller) | 405,063 vs 1,289,312 bytes (3.18× smaller) |
-| Query p50, cold (fresh process) | 521.5 µs | 513.3 µs |
-| Query p50, warm, hot-term cache on | 124.5 µs | 111.0 µs |
-| Query p50, warm, Redis hit | 72.7 µs | 71.5 µs |
-| Query p50, baseline linear scan | 46,135.7 µs | 39,614.8 µs |
+| Query p50, cold (fresh process) | 518.5 µs | 542.8 µs |
+| Query p50, warm, hot-term cache on | 124.5 µs | 112.5 µs |
+| Query p50, warm, Redis hit | 75.5 µs | 75.2 µs |
+| Query p50, baseline linear scan | 47,542.4 µs | 41,330.4 µs |
 
 Retrieval quality on Cranfield (225 queries):
 

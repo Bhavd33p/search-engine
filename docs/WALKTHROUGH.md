@@ -436,9 +436,11 @@ ours:
 * terms that are not in the index, and errors, are not cached;
 * hit/miss counters and an approximate byte size are exposed through `Stats`.
 
-Measured effect (BENCHMARKS.md, run 1): warm p50 drops from 134.1 µs to 124.5 µs
-on the Rust docs and from 144.3 µs to 111.0 µs on Cranfield, whose long queries
-touch more terms.
+Measured effect (BENCHMARKS.md, run 1): warm p50 drops from 153.2 µs to 112.5 µs
+on Cranfield, whose long free-text queries touch many terms (lower in all three
+runs). On the Rust docs it drops from 135.4 µs to 124.5 µs, but across three runs
+that difference is within the noise — those short queries spend most of their
+time on stored documents and snippets.
 
 ### 3.8 "benchmarking cold vs warm query latency, index build time and index size against a baseline"
 
@@ -551,7 +553,7 @@ decode with SIMD at billions of integers per second, at the cost of complexity
 and block-granular access. Elias–Fano gives near-optimal space with fast random
 access; Lucene uses block-packed formats. For a corpus this size VByte decoding
 is not the bottleneck — turning the hot-term cache off, which adds the RocksDB
-read and decode back to every term, raises warm p50 by 7.7% (Rust docs) and 30.0% (Cranfield) — so
+read and decode back to every term, raises warm p50 by 8.8% (Rust docs) and 36.2% (Cranfield) in run 1 — so
 simplicity won.
 
 **BM25 vs TF-IDF.** TF-IDF with cosine normalisation is the classic vector-space
@@ -687,7 +689,7 @@ position, iterator chains (`.iter().map().filter().collect()`).
 **1. What is an inverted index and why use one?**
 A map from each term to the sorted list of documents (and positions) containing
 it. A query reads only its terms' lists instead of every document: here a warm
-query takes ~0.1 ms versus ~40–46 ms for scanning the 1.5 MB corpus.
+query takes ~0.1 ms versus ~41–48 ms for scanning the 1.5 MB corpus.
 
 **2. What is in a posting, and why store positions?**
 Doc id, term frequency and the word positions. Positions enable phrase queries and
@@ -850,5 +852,5 @@ $se eval --index data/cranfield-index --queries data/cranfield/cran.qry --qrels 
 ```
 
 BM25 MAP 0.3135 vs TF-IDF 0.2946. Then open BENCHMARKS.md: warm p50 ≈ 0.11–0.12 ms,
-cold ≈ 0.5 ms, Redis hit ≈ 0.07 ms, linear scan ≈ 40–46 ms with identical results.
+cold ≈ 0.5 ms, Redis hit ≈ 0.075 ms, linear scan ≈ 41–48 ms with identical results.
 Close with the limitations list — knowing them is part of the answer.
