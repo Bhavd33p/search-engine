@@ -61,11 +61,19 @@ pub struct SearchResults {
 #[derive(Debug, Error)]
 pub enum SearchError {
     #[error("invalid query: {0}")]
-    Parse(#[from] ParseError),
+    Parse(ParseError),
     #[error("query has no searchable terms (only stop words?)")]
     NoSearchableTerms,
     #[error(transparent)]
     Store(#[from] StoreError),
+}
+
+// Not `#[from]`: that would also make the ParseError the error's *source*, and
+// error reports would print the same message twice.
+impl From<ParseError> for SearchError {
+    fn from(error: ParseError) -> Self {
+        Self::Parse(error)
+    }
 }
 
 pub struct Engine {

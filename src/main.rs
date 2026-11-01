@@ -5,9 +5,11 @@ use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use search_engine::analysis::Analyzer;
 use search_engine::corpus;
+use search_engine::engine::{Engine, EngineConfig, QueryMode};
 use search_engine::index::builder::InMemoryIndex;
 use search_engine::index::postings::Codec;
 use search_engine::index::store;
+use search_engine::rank::{Bm25, RankerKind};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
@@ -28,7 +30,7 @@ enum Command {
     /// Build an inverted index from a corpus.
     Index(IndexArgs),
     /// Run a query against an index.
-    Search,
+    Search(SearchArgs),
     /// Serve the index over gRPC.
     Serve,
     /// Benchmark index build, index size and query latency.
@@ -50,6 +52,54 @@ struct IndexArgs {
     codec: Codec,
 }
 
+#[derive(Args)]
+struct SearchArgs {
+    /// Index directory.
+    #[arg(long)]
+    index: PathBuf,
+    /// Query text, e.g. `rust -unsafe "memory safety"`.
+    #[arg(required = true, num_args = 1..)]
+    query: Vec<String>,
+    /// Number of results.
+    #[arg(short, long, default_value_t = 10)]
+    k: usize,
+    #[arg(long, value_enum, default_value_t = RankerKind::Bm25)]
+    ranker: RankerKind,
+    /// Treat the query as free text (OR of all words) instead of the query language.
+    #[arg(long)]
+    any: bool,
+    #[command(flatten)]
+    bm25: Bm25Args,
+    /// Print results as JSON.
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Args, Clone, Copy)]
+struct Bm25Args {
+    /// BM25 term-frequency saturation.
+    #[arg(long, default_value_t = 1.2)]
+    bm25_k1: f64,
+    /// BM25 length normalisation (0 = none, 1 = full).
+    #[arg(long, default_value_t = 0.75)]
+    bm25_b: f64,
+}
+
+impl Bm25Args {
+    fn engine_config(self) -> EngineConfig {
+        EngineConfig {
+            bm25: Bm25 {
+                k1: self.bm25_k1,
+                b: self.bm25_b,
+            },
+        }
+    }
+}
+
+fn query_mode(any: bool) -> QueryMode {
+    if any { QueryMode::AnyTerms } else { QueryMode::Boolean }
+}
+
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
@@ -59,7 +109,8 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Command::Index(args) => run_index(args),
-        Command::Crawl | Command::Search | Command::Serve | Command::Bench | Command::Eval => {
+        Command::Search(args) => run_search(args),
+        Command::Crawl | Command::Serve | Command::Bench | Command::Eval => {
             bail!("not implemented yet")
         }
     }
@@ -91,5 +142,35 @@ fn run_index(args: IndexArgs) -> Result<()> {
     println!("  stored docs bytes  {}", report.docs_bytes);
     println!("  index version      {}", stats.index_version);
     println!("  read {read_secs:.3}s, analyse+invert {build_secs:.3}s, write {write_secs:.3}s");
+    Ok(())
+}
+
+fn run_search(args: SearchArgs) -> Result<()> {
+    let engine = Engine::open(&args.index, args.bm25.engine_config())
+        .with_context(|| format!("opening index {}", args.index.display()))?;
+    let text = args.query.join(" ");
+    let started = Instant::now();
+    let query = engine.analyze(&text, query_mode(args.any))?;
+    let results = engine.search(&query, args.k, args.ranker)?;
+    let elapsed = started.elapsed();
+
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&results)?);
+        return Ok(());
+    }
+    let noun = if results.total_matches == 1 { "match" } else { "matches" };
+    println!(
+        "{} {noun} for {query} in {:.2} ms ({})",
+        results.total_matches,
+        elapsed.as_secs_f64() * 1000.0,
+        args.ranker
+    );
+    for (rank, hit) in results.hits.iter().enumerate() {
+        println!("\n{:>2}. [{:.4}] {}", rank + 1, hit.score, hit.title);
+        if !hit.url.is_empty() {
+            println!("    {}", hit.url);
+        }
+        println!("    {}", hit.snippet);
+    }
     Ok(())
 }
