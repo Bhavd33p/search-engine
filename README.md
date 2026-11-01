@@ -141,7 +141,7 @@ Shortcuts for all of the above live in the [Makefile](Makefile) (`make check`,
 
 Operators are upper case only, so `and`/`or`/`not` are ordinary (stop) words.
 Every word goes through the same analyser as the documents, so `Foxes` matches
-`fox`.
+`fox`. Queries are limited to 4,096 bytes and 64 levels of nesting.
 
 ## gRPC API
 

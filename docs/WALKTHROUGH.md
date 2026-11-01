@@ -120,17 +120,22 @@ How the crawler works (`src/crawler/mod.rs::crawl`):
    parameters, lower-case host), then checked against a `seen` set. Page *text*
    is also hashed, so two URLs serving identical content are stored once.
 3. **Scope** — `Scope::contains` only allows URLs on the seed's host *and* under
-   the seed's directory, so seeding `/book/` does not wander into `/std/`.
+   the seed's directory, so seeding `/book/` (or `/book`) does not wander into
+   `/std/`.
 4. **robots.txt** — before the first request to a host, `fetch_robots` downloads
-   `/robots.txt`; `RobotsPolicy::from_response` follows RFC 9309: a missing file
-   (4xx) allows everything, an unreachable one (5xx / network error) disallows
-   everything. Rule matching uses the `texting_robots` crate. A `Crawl-delay`
-   longer than ours is respected.
+   `/robots.txt` (following up to 5 redirects); `RobotsPolicy::from_response`
+   follows RFC 9309: a missing file (4xx) allows everything, an unreachable one
+   (5xx, 429 or a network error) disallows everything. Rule matching uses the
+   `texting_robots` crate. A `Crawl-delay` longer than ours is respected; one
+   longer than 60 s (or `inf`) makes the crawler skip the host rather than stall
+   or misbehave.
 5. **Politeness delay** — `HostThrottle::wait_turn` gives each request a time
-   slot at least `--delay-ms` (default 1000 ms) after the previous slot for the
-   same host. Up to `--concurrency` fetches run at once as tokio tasks, but
-   they still queue behind the same host's slots, so one host never sees more
-   than one request per second.
+   slot at least the host's delay (`--delay-ms`, default 1000 ms, or the site's
+   longer `Crawl-delay`) after the previous slot for the same host name. Up to
+   `--concurrency` fetches run at once as tokio tasks, but they queue behind the
+   same host's slots, so requests to one host are always at least that delay
+   apart. A 429 or 503 response pauses the host for ten delays
+   (`HostThrottle::back_off`).
 6. **Redirects** are not followed automatically; the `Location` target goes back
    into the frontier so it passes the same robots/scope/duplicate checks.
 7. **Extraction** (`extract.rs::extract`) parses the HTML with `scraper`, takes
@@ -354,7 +359,10 @@ primary  := WORD | PHRASE | "(" or_expr ")"
 Because `or_expr` calls `and_expr`, which calls `unary`, the deeper rule binds
 tighter: `a OR b c` parses as `a OR (b AND c)` and `NOT a b` as `(NOT a) AND b`.
 Errors (`(a OR b`, `a OR`, `AND a`) come back as a `ParseError`, which the gRPC
-layer turns into `INVALID_ARGUMENT`.
+layer turns into `INVALID_ARGUMENT`. Because the parser recurses once per `(` or
+`NOT`, nesting is capped at 64 levels (`MAX_NESTING`) and queries at 4,096 bytes
+(`MAX_QUERY_BYTES`); without the cap, a request of 100,000 `(` would overflow the
+thread's stack and crash the server.
 
 **Analysis of the query** (`src/query/analyzed.rs::AnalyzedQuery::analyze`) runs
 every word through the `Analyzer`: stop words disappear from their AND/OR, a word
@@ -404,9 +412,13 @@ walkthrough:de7756fafe0bd41e:bm25(k1=1.2,b=0.75):3:and("memori@0 safeti@1",not(u
 **Redis is optional.** `ResultCache::connect` returns `None` and logs a warning
 if Redis is unreachable at startup; the engine then simply runs without a result
 cache. After startup, every Redis error (or a reply slower than 250 ms) is logged
-and treated as a miss, so a sick Redis can never make a query fail. Logs are
-throttled to the 1st, 2nd, 4th, 8th… failure. Values are written with
-`SET key value EX ttl` after a miss (`SearchService::search`).
+and treated as a miss, so a sick Redis can never make a query fail. The failure
+also opens a small **circuit breaker** that bypasses Redis for 5 seconds, so an
+outage costs at most one slow command per 5 s instead of a GET and a SET timeout
+on every query. Logs are throttled to the 1st, 2nd, 4th, 8th… failure. Values are
+written with `SET key value EX ttl` after a miss (`SearchService::search`).
+Commas inside terms (`1,000`) are escaped in the canonical form, so `1,2 x` and
+`1 2 x` cannot share a key.
 
 ### 3.7 "in-memory index residency for hot terms"
 
@@ -604,9 +616,14 @@ What this engine does **not** do, and what a production engine does instead:
   authentication or TLS.
 * **English only.** One stop list, one stemmer; no synonyms, spelling correction or
   query suggestions.
+* **Stop words can change a query's meaning.** In `the -rust`, `the` disappears
+  and what is left is the pure negation `-rust`: every document without `rust`,
+  all scored 0.
 * **Crawler**: frontier and `seen` set live in memory (no resume after a crash),
   no sitemap use, no JavaScript rendering, scope is fixed to the seeds' host and
-  directory, redirects to other hosts are dropped by the scope check.
+  directory, redirects to other hosts are dropped by the scope check, the
+  throttle is per host name (so `http://` and `https://` of one host share it,
+  which errs on the polite side), and `Retry-After` headers are not parsed.
 * **Result cache** keys contain the full canonical query (long queries make long
   keys) and entries are not shared across different k.
 * **Evaluation** uses one small, old test collection (Cranfield); benchmarks use
@@ -723,8 +740,12 @@ are never read and expire by TTL — no explicit invalidation needed.
 
 **13. What happens if Redis goes down?**
 At startup: the cache is disabled with a warning. At runtime: errors and
-replies slower than 250 ms are treated as misses and logged (throttled); queries
-are answered from the index. Tested with an unreachable Redis.
+replies slower than 250 ms are treated as misses and logged (throttled), and a
+circuit breaker skips Redis for 5 s after a failure, so an outage costs at most
+one slow command per 5 s. Queries are answered from the index throughout. An
+automated test covers an unreachable Redis; in a manual check, killing Redis
+under a running service left all 12 following queries (one every 0.5 s)
+successful and fast, with 2 Redis errors and 10 bypassed lookups.
 
 **14. What does the hot-term cache store, and why not cache everything?**
 Decoded posting lists of recently used terms, LRU-evicted, shared via `Arc`.
@@ -747,9 +768,10 @@ Write new documents to a new segment, mark deleted doc ids in a bitmap that quer
 evaluation subtracts, and purge them when segments merge.
 
 **18. How is the crawler polite?**
-robots.txt per RFC 9309 (including Crawl-delay), at least 1 s between requests to
-a host even with concurrent workers, a descriptive User-Agent, a page cap and a
-scope limit. The real crawl made 302 requests in 302 s.
+robots.txt per RFC 9309 (including Crawl-delay and redirects), at least 1 s
+between requests to a host even with concurrent workers, a pause of ten delays
+after a 429/503, a descriptive User-Agent, a page cap and a scope limit. The
+real crawl made 302 requests in 302 s.
 
 **19. How did you measure cold vs warm, and what is the catch?**
 Cold = fresh process per query (new RocksDB, empty caches, fresh Redis namespace).
