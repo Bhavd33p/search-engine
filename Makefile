@@ -38,15 +38,21 @@ index-cranfield: build
 eval: index-cranfield
 	$(BIN) eval --index data/cranfield-index --queries data/cranfield/cran.qry --qrels data/cranfield/cranqrel
 
+# `make bench RUN=2` writes bench/results/*-run2.{json,md}.
+RUN ?= 1
+
 bench: build
 	mkdir -p bench/results
 	rm -rf data/bench
 	$(BIN) bench --name "Rust docs crawl" --input data/rust-docs.jsonl \
 		--queries bench/queries/rust-docs.txt --work-dir data/bench/rust-docs \
-		--redis-url $(REDIS_URL) --rounds 20 --out bench/results/rust-docs.json
+		--redis-url $(REDIS_URL) --rounds 20 --build-runs 3 \
+		--out bench/results/rust-docs-run$(RUN).json > bench/results/rust-docs-run$(RUN).md
 	$(BIN) bench --name "Cranfield" --input data/cranfield/cran.all.1400 --format cranfield \
 		--queries data/cranfield/cran.qry --query-format cranfield --any --work-dir data/bench/cranfield \
-		--redis-url $(REDIS_URL) --rounds 5 --out bench/results/cranfield.json
+		--redis-url $(REDIS_URL) --rounds 5 --build-runs 3 \
+		--out bench/results/cranfield-run$(RUN).json > bench/results/cranfield-run$(RUN).md
+	cat bench/results/rust-docs-run$(RUN).md bench/results/cranfield-run$(RUN).md
 
 serve: build
 	$(BIN) serve --index data/rust-docs-index --addr 127.0.0.1:50051 --redis-url $(REDIS_URL)
