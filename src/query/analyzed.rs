@@ -113,9 +113,12 @@ impl AnalyzedQuery {
     /// Used as part of the result-cache key.
     pub fn canonical(&self) -> String {
         match self {
-            Self::Term(term) => term.clone(),
+            Self::Term(term) => escape(term),
             Self::Phrase(parts) => {
-                let words: Vec<String> = parts.iter().map(|p| format!("{}@{}", p.term, p.offset)).collect();
+                let words: Vec<String> = parts
+                    .iter()
+                    .map(|p| format!("{}@{}", escape(&p.term), p.offset))
+                    .collect();
                 format!("\"{}\"", words.join(" "))
             }
             Self::And(children) => Self::canonical_group("and", children),
@@ -128,6 +131,16 @@ impl AnalyzedQuery {
         let mut parts: Vec<String> = children.iter().map(Self::canonical).collect();
         parts.sort_unstable();
         format!("{name}({})", parts.join(","))
+    }
+}
+
+/// Terms can contain commas ("1,000" is one word). Unescaped, the queries
+/// `1,2 x` and `1 2 x` would both become `and(1,2,x)` and share a cache entry.
+fn escape(term: &str) -> String {
+    if term.contains([',', '\\']) {
+        term.replace('\\', "\\\\").replace(',', "\\,")
+    } else {
+        term.to_string()
     }
 }
 
@@ -195,6 +208,17 @@ mod tests {
             analyze("quick fox").unwrap().canonical(),
             analyze("quick OR fox").unwrap().canonical()
         );
+    }
+
+    #[test]
+    fn commas_inside_terms_cannot_collide_with_separators() {
+        let one_term = analyze("1,000 x").unwrap().canonical();
+        let two_terms = analyze("1 000 x").unwrap().canonical();
+        assert_eq!(one_term, "and(1\\,000,x)");
+        assert_eq!(two_terms, "and(000,1,x)");
+        let mixed = analyze("1,2 x").unwrap().canonical();
+        let separate = analyze("1 2 x").unwrap().canonical();
+        assert_ne!(mixed, separate);
     }
 
     #[test]
