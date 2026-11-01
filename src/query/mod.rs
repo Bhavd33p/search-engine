@@ -10,6 +10,7 @@
 //! ```
 
 mod lexer;
+pub mod ops;
 mod parser;
 
 use std::fmt;
