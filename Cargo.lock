@@ -499,6 +499,7 @@ dependencies = [
  "clap",
  "proptest",
  "rust-stemmers",
+ "serde",
  "thiserror",
  "tracing",
  "tracing-subscriber",
