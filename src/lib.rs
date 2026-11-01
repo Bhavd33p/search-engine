@@ -6,6 +6,8 @@
 
 pub mod analysis;
 pub mod corpus;
+pub mod engine;
 pub mod index;
 pub mod query;
 pub mod rank;
+pub mod snippet;
