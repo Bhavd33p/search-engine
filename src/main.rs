@@ -1,15 +1,18 @@
 use std::path::PathBuf;
-use std::time::Instant;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use search_engine::analysis::Analyzer;
+use search_engine::cache::result_cache::{ResultCache, ResultCacheConfig};
 use search_engine::corpus;
 use search_engine::engine::{Engine, EngineConfig, QueryMode};
 use search_engine::index::builder::InMemoryIndex;
 use search_engine::index::postings::Codec;
 use search_engine::index::store;
 use search_engine::rank::{Bm25, RankerKind};
+use search_engine::service::SearchService;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
@@ -70,6 +73,8 @@ struct SearchArgs {
     any: bool,
     #[command(flatten)]
     engine: EngineArgs,
+    #[command(flatten)]
+    cache: CacheArgs,
     /// Print results as JSON.
     #[arg(long)]
     json: bool,
@@ -100,11 +105,37 @@ impl EngineArgs {
     }
 }
 
+#[derive(Args, Clone)]
+struct CacheArgs {
+    /// Redis URL for the query-result cache, e.g. redis://127.0.0.1:6379. Omit to disable.
+    #[arg(long, env = "REDIS_URL")]
+    redis_url: Option<String>,
+    /// Seconds a cached result lives.
+    #[arg(long, default_value_t = 300)]
+    cache_ttl_secs: u64,
+    /// Prefix for cache keys.
+    #[arg(long, default_value = "se")]
+    cache_namespace: String,
+}
+
+impl CacheArgs {
+    async fn connect(&self) -> Option<ResultCache> {
+        let url = self.redis_url.clone()?;
+        ResultCache::connect(ResultCacheConfig {
+            url,
+            ttl: Duration::from_secs(self.cache_ttl_secs),
+            namespace: self.cache_namespace.clone(),
+        })
+        .await
+    }
+}
+
 fn query_mode(any: bool) -> QueryMode {
     if any { QueryMode::AnyTerms } else { QueryMode::Boolean }
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .with_writer(std::io::stderr)
@@ -113,7 +144,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Command::Index(args) => run_index(args),
-        Command::Search(args) => run_search(args),
+        Command::Search(args) => run_search(args).await,
         Command::Crawl | Command::Serve | Command::Bench | Command::Eval => {
             bail!("not implemented yet")
         }
@@ -149,24 +180,24 @@ fn run_index(args: IndexArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_search(args: SearchArgs) -> Result<()> {
+async fn run_search(args: SearchArgs) -> Result<()> {
     let engine = Engine::open(&args.index, args.engine.engine_config())
         .with_context(|| format!("opening index {}", args.index.display()))?;
+    let service = SearchService::new(Arc::new(engine), args.cache.connect().await);
     let text = args.query.join(" ");
-    let started = Instant::now();
-    let query = engine.analyze(&text, query_mode(args.any))?;
-    let results = engine.search(&query, args.k, args.ranker)?;
-    let elapsed = started.elapsed();
+    let response = service.search(&text, query_mode(args.any), args.k, args.ranker).await?;
+    let results = &response.results;
 
     if args.json {
-        println!("{}", serde_json::to_string_pretty(&results)?);
+        println!("{}", serde_json::to_string_pretty(&response)?);
         return Ok(());
     }
     let noun = if results.total_matches == 1 { "match" } else { "matches" };
+    let source = if response.cache_hit { "redis cache" } else { "index" };
     println!(
-        "{} {noun} for {query} in {:.2} ms ({})",
+        "{} {noun} in {:.2} ms ({}, from {source})",
         results.total_matches,
-        elapsed.as_secs_f64() * 1000.0,
+        response.took.as_secs_f64() * 1000.0,
         args.ranker
     );
     for (rank, hit) in results.hits.iter().enumerate() {

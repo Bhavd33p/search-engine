@@ -11,4 +11,5 @@ pub mod engine;
 pub mod index;
 pub mod query;
 pub mod rank;
+pub mod service;
 pub mod snippet;
