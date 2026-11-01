@@ -10,10 +10,10 @@
     {
       "codec": "v_byte",
       "runs": 3,
-      "median_analyse_secs": 0.048583334,
-      "median_write_secs": 0.010431833,
-      "median_total_secs": 0.059015167,
-      "docs_per_sec": 23722.71521319257,
+      "median_analyse_secs": 0.046425875,
+      "median_write_secs": 0.009989333,
+      "median_total_secs": 0.056415208,
+      "docs_per_sec": 24816.00351451332,
       "postings_bytes": 405063,
       "fixed_u32_postings_bytes": 1289312,
       "stored_docs_bytes": 1604759,
@@ -36,10 +36,10 @@
     {
       "codec": "fixed_u32",
       "runs": 3,
-      "median_analyse_secs": 0.044877042,
-      "median_write_secs": 0.009931333,
-      "median_total_secs": 0.055468708,
-      "docs_per_sec": 25239.455730607606,
+      "median_analyse_secs": 0.044840958,
+      "median_write_secs": 0.010029834,
+      "median_total_secs": 0.054870792,
+      "docs_per_sec": 25514.48501053165,
       "postings_bytes": 1289312,
       "fixed_u32_postings_bytes": 1289312,
       "stored_docs_bytes": 1604759,
@@ -57,7 +57,7 @@
           14488
         ]
       ],
-      "index_dir_bytes": 3137445
+      "index_dir_bytes": 3137447
     }
   ],
   "queries": 225,
@@ -67,45 +67,45 @@
   "latency": {
     "cold": {
       "samples": 225,
-      "p50_us": 527.042,
-      "p95_us": 644.25,
-      "p99_us": 832.375,
-      "mean_us": 571.0405466666666
+      "p50_us": 536.0840000000001,
+      "p95_us": 638.917,
+      "p99_us": 687.667,
+      "mean_us": 538.9981688888889
     },
     "cold_engine_open": {
       "samples": 225,
-      "p50_us": 953.541,
-      "p95_us": 1072.417,
-      "p99_us": 1264.5829999999999,
-      "mean_us": 973.1802266666672
+      "p50_us": 932.3340000000001,
+      "p95_us": 1218.875,
+      "p99_us": 1432.75,
+      "mean_us": 968.7522444444445
     },
     "warm_hot_terms_off": {
       "samples": 1125,
-      "p50_us": 169.375,
-      "p95_us": 247.666,
-      "p99_us": 284.875,
-      "mean_us": 171.2712151111109
+      "p50_us": 153.583,
+      "p95_us": 217.375,
+      "p99_us": 251.33300000000003,
+      "mean_us": 158.449431111111
     },
     "warm_hot_terms_on": {
       "samples": 1125,
-      "p50_us": 111.041,
-      "p95_us": 143.25,
-      "p99_us": 157.583,
-      "mean_us": 112.4214168888888
+      "p50_us": 116.917,
+      "p95_us": 157.292,
+      "p99_us": 257.33299999999997,
+      "mean_us": 127.66411022222228
     },
     "warm_redis_hit": {
       "samples": 1125,
-      "p50_us": 74.583,
-      "p95_us": 89.75,
-      "p99_us": 98.416,
-      "mean_us": 76.11434222222213
+      "p50_us": 71.79100000000001,
+      "p95_us": 85.95800000000001,
+      "p99_us": 93.04100000000001,
+      "mean_us": 73.36344622222225
     },
     "baseline_linear_scan": {
       "samples": 225,
-      "p50_us": 41164.167,
-      "p95_us": 44758.625,
-      "p99_us": 48612.958,
-      "mean_us": 41734.97626666666
+      "p50_us": 40697.417,
+      "p95_us": 42414.25,
+      "p99_us": 43768.708000000006,
+      "mean_us": 40918.05960444444
     }
   },
   "hot_terms_after_warm": {

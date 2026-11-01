@@ -162,12 +162,12 @@ all three runs with their spread, and caveats are in [BENCHMARKS.md](BENCHMARKS.
 
 | | Rust docs crawl (300 pages) | Cranfield (1,400 docs) |
 |---|---:|---:|
-| Index build, total (median of 3) | 0.060 s (4,997 docs/s) | 0.058 s (24,123 docs/s) |
+| Index build, total (median of 3) | 0.063 s (4,782 docs/s) | 0.054 s (25,824 docs/s) |
 | Posting lists, VByte vs fixed-width `u32` | 315,504 vs 971,256 bytes (3.08× smaller) | 405,063 vs 1,289,312 bytes (3.18× smaller) |
-| Query p50, cold (fresh process) | 518.5 µs | 542.8 µs |
-| Query p50, warm, hot-term cache on | 124.5 µs | 112.5 µs |
-| Query p50, warm, Redis hit | 75.5 µs | 75.2 µs |
-| Query p50, baseline linear scan | 47,542.4 µs | 41,330.4 µs |
+| Query p50, cold (fresh process) | 537.6 µs | 539.6 µs |
+| Query p50, warm, hot-term cache on | 129.6 µs | 108.2 µs |
+| Query p50, warm, Redis hit | 85.5 µs | 70.9 µs |
+| Query p50, baseline linear scan | 48,403.6 µs | 41,099.6 µs |
 
 Retrieval quality on Cranfield (225 queries):
 

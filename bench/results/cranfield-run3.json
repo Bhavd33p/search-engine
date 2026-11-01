@@ -10,10 +10,10 @@
     {
       "codec": "v_byte",
       "runs": 3,
-      "median_analyse_secs": 0.046427458,
-      "median_write_secs": 0.010648083,
-      "median_total_secs": 0.057172958,
-      "docs_per_sec": 24487.101052214228,
+      "median_analyse_secs": 0.046930083,
+      "median_write_secs": 0.009524625,
+      "median_total_secs": 0.056454708,
+      "docs_per_sec": 24798.640354317304,
       "postings_bytes": 405063,
       "fixed_u32_postings_bytes": 1289312,
       "stored_docs_bytes": 1604759,
@@ -36,10 +36,10 @@
     {
       "codec": "fixed_u32",
       "runs": 3,
-      "median_analyse_secs": 0.044544708,
-      "median_write_secs": 0.009510083,
-      "median_total_secs": 0.054054791,
-      "docs_per_sec": 25899.646897164028,
+      "median_analyse_secs": 0.044895,
+      "median_write_secs": 0.010053,
+      "median_total_secs": 0.055313917,
+      "docs_per_sec": 25310.086067490032,
       "postings_bytes": 1289312,
       "fixed_u32_postings_bytes": 1289312,
       "stored_docs_bytes": 1604759,
@@ -67,45 +67,45 @@
   "latency": {
     "cold": {
       "samples": 225,
-      "p50_us": 532.0830000000001,
-      "p95_us": 618.791,
-      "p99_us": 653.791,
-      "mean_us": 533.5496444444445
+      "p50_us": 534.417,
+      "p95_us": 660.0,
+      "p99_us": 883.375,
+      "mean_us": 549.9489244444446
     },
     "cold_engine_open": {
       "samples": 225,
-      "p50_us": 938.9580000000001,
-      "p95_us": 1248.0410000000002,
-      "p99_us": 1349.5,
-      "mean_us": 975.2035111111118
+      "p50_us": 930.458,
+      "p95_us": 1174.834,
+      "p99_us": 1331.625,
+      "mean_us": 982.0101688888886
     },
     "warm_hot_terms_off": {
       "samples": 1125,
-      "p50_us": 152.041,
-      "p95_us": 214.375,
-      "p99_us": 243.041,
-      "mean_us": 155.32418222222208
+      "p50_us": 153.833,
+      "p95_us": 216.875,
+      "p99_us": 244.084,
+      "mean_us": 156.21419111111092
     },
     "warm_hot_terms_on": {
       "samples": 1125,
-      "p50_us": 132.25,
-      "p95_us": 187.083,
-      "p99_us": 222.25,
-      "mean_us": 135.72377777777777
+      "p50_us": 110.333,
+      "p95_us": 142.25,
+      "p99_us": 157.75,
+      "mean_us": 112.03754666666667
     },
     "warm_redis_hit": {
       "samples": 1125,
-      "p50_us": 70.875,
-      "p95_us": 85.583,
-      "p99_us": 93.334,
-      "mean_us": 72.19141511111104
+      "p50_us": 72.208,
+      "p95_us": 88.75,
+      "p99_us": 100.334,
+      "mean_us": 74.26264444444446
     },
     "baseline_linear_scan": {
       "samples": 225,
-      "p50_us": 41237.375,
-      "p95_us": 43754.75,
-      "p99_us": 46741.083000000006,
-      "mean_us": 41582.11576
+      "p50_us": 41129.125,
+      "p95_us": 43132.458,
+      "p99_us": 45242.458,
+      "mean_us": 41432.82887555558
     }
   },
   "hot_terms_after_warm": {
