@@ -9,6 +9,7 @@
 
 pub mod bm25;
 pub mod tfidf;
+pub mod topk;
 
 use std::fmt;
 
