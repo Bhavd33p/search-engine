@@ -1,0 +1,48 @@
+# Latency benchmark queries for the Rust Book + Rust by Example crawl.
+# Written before looking at results; they exercise every part of the query
+# language. Not relevance-labelled — retrieval quality is measured on Cranfield.
+
+# single terms
+ownership
+lifetimes
+closures
+iterator
+trait
+macro
+generics
+mutex
+# implicit AND
+borrow checker
+smart pointers
+error handling
+pattern matching
+trait objects
+hash map
+unit tests
+string slices
+reference counting
+cargo workspace
+# explicit operators
+ownership AND borrowing
+closure OR lambda
+iterator OR loop OR recursion
+struct AND impl AND method
+trait -generic
+unsafe NOT pointer
+(vector OR array) AND index
+(thread OR async) -mutex
+# phrases
+"dangling reference"
+"move semantics"
+"interior mutability"
+"zero cost abstraction"
+"type inference"
+"the borrow checker"
+"raw pointer" OR "smart pointer"
+"error handling" -panic
+# mixed
+lifetime "elision rules"
+(box OR rc) "heap allocation"
+enum match "pattern matching"
+-unsafe "memory safety"
+iterator adapters map filter
