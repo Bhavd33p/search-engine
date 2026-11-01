@@ -101,9 +101,27 @@ pub fn encode(list: &PostingList, codec: Codec) -> Vec<u8> {
 }
 
 pub fn decode(bytes: &[u8], codec: Codec) -> Result<PostingList, DecodeError> {
-    match codec {
-        Codec::VByte => decode_vbyte(bytes),
-        Codec::FixedU32 => decode_fixed_u32(bytes),
+    let list = match codec {
+        Codec::VByte => decode_vbyte(bytes)?,
+        Codec::FixedU32 => decode_fixed_u32(bytes)?,
+    };
+    check_order(&list)?;
+    Ok(list)
+}
+
+/// Rejects lists the builder can never produce — repeated doc ids or positions,
+/// or a document with no positions — so corruption is caught at read time
+/// instead of silently breaking binary searches later.
+fn check_order(list: &PostingList) -> Result<(), DecodeError> {
+    let doc_ids_increase = list.postings.windows(2).all(|pair| pair[0].doc_id < pair[1].doc_id);
+    let positions_valid = list
+        .postings
+        .iter()
+        .all(|posting| !posting.positions.is_empty() && posting.positions.windows(2).all(|pair| pair[0] < pair[1]));
+    if doc_ids_increase && positions_valid {
+        Ok(())
+    } else {
+        Err(DecodeError::Malformed)
     }
 }
 
@@ -249,6 +267,25 @@ mod tests {
         assert!(decode(&bytes[..bytes.len() - 1], Codec::VByte).is_err());
         let bytes = encode(&fox(), Codec::FixedU32);
         assert!(decode(&bytes[..bytes.len() - 1], Codec::FixedU32).is_err());
+    }
+
+    #[test]
+    fn rejects_repeated_doc_ids_positions_and_empty_postings() {
+        // df 2: doc 3 (tf 1, pos 0), then a zero gap -> doc 3 again.
+        assert_eq!(
+            decode(&[0x02, 0x03, 0x01, 0x00, 0x00, 0x01, 0x00], Codec::VByte),
+            Err(DecodeError::Malformed)
+        );
+        // tf 0
+        assert_eq!(decode(&[0x01, 0x03, 0x00], Codec::VByte), Err(DecodeError::Malformed));
+        // positions 5 then 5 (gap 0)
+        assert_eq!(
+            decode(&[0x01, 0x03, 0x02, 0x05, 0x00], Codec::VByte),
+            Err(DecodeError::Malformed)
+        );
+        // fixed32: df 2, doc 7 (tf 1, pos 0), then doc 3 (tf 1, pos 0)
+        let backwards: Vec<u8> = [2u32, 7, 1, 0, 3, 1, 0].iter().flat_map(|v| v.to_le_bytes()).collect();
+        assert_eq!(decode(&backwards, Codec::FixedU32), Err(DecodeError::Malformed));
     }
 
     #[test]

@@ -29,6 +29,8 @@ pub enum DecodeError {
     TrailingBytes(usize),
     #[error("delta-decoded value does not fit in a u32")]
     GapOverflow,
+    #[error("posting list has repeated or decreasing doc ids or positions")]
+    Malformed,
 }
 
 /// Appends `value` to `out` in VByte form.
