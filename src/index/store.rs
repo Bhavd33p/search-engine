@@ -6,7 +6,7 @@
 //! |---------------|------------------------|----------------------------------------|
 //! | `postings`    | term (UTF-8)           | encoded posting list                   |
 //! | `docs`        | doc id (big-endian u32) | stored fields as JSON                 |
-//! | `meta`        | `stats`, `doc_lengths` | collection statistics and doc lengths  |
+//! | `meta`        | `stats`, `doc_lengths`, `doc_norms` | collection statistics, per-doc lengths and TF-IDF norms |
 //!
 //! Doc ids are big-endian so RocksDB's byte-wise key order matches numeric order.
 //! RocksDB block compression is switched off so the on-disk size reflects our
@@ -22,6 +22,7 @@ use super::builder::InMemoryIndex;
 use super::postings::{self, Codec, PostingList};
 use super::vbyte::{self, DecodeError};
 use crate::corpus::Document;
+use crate::rank::tfidf;
 
 pub const CF_POSTINGS: &str = "postings";
 pub const CF_DOCS: &str = "docs";
@@ -30,6 +31,7 @@ const COLUMN_FAMILIES: [&str; 3] = [CF_POSTINGS, CF_DOCS, CF_META];
 
 const META_STATS: &[u8] = b"stats";
 const META_DOC_LENGTHS: &[u8] = b"doc_lengths";
+const META_DOC_NORMS: &[u8] = b"doc_norms";
 
 /// Bumped whenever the on-disk layout changes.
 pub const FORMAT_VERSION: u32 = 1;
@@ -152,9 +154,14 @@ pub fn write_index(path: &Path, index: &InMemoryIndex, codec: Codec) -> Result<(
     for &length in &index.doc_lengths {
         vbyte::encode_u32(length, &mut doc_lengths);
     }
+    let doc_norms: Vec<u8> = tfidf::document_norms(index)
+        .iter()
+        .flat_map(|norm| norm.to_le_bytes())
+        .collect();
     let mut batch = WriteBatch::default();
     batch.put_cf(meta_cf, META_STATS, serde_json::to_vec(&stats)?);
     batch.put_cf(meta_cf, META_DOC_LENGTHS, doc_lengths);
+    batch.put_cf(meta_cf, META_DOC_NORMS, doc_norms);
     db.write_opt(batch, &write_options)?;
 
     for name in COLUMN_FAMILIES {
@@ -172,6 +179,7 @@ pub struct IndexReader {
     db: DB,
     stats: IndexStats,
     doc_lengths: Vec<u32>,
+    doc_norms: Vec<f64>,
 }
 
 impl IndexReader {
@@ -198,7 +206,25 @@ impl IndexReader {
             .collect::<Result<Vec<_>, _>>()?;
         reader.finish()?;
 
-        Ok(Self { db, stats, doc_lengths })
+        let norms_bytes = db
+            .get_cf(cf(&db, CF_META)?, META_DOC_NORMS)?
+            .ok_or(StoreError::Missing("meta/doc_norms"))?;
+        if norms_bytes.len() != 8 * stats.num_docs as usize {
+            return Err(StoreError::Missing("a TF-IDF norm for every document"));
+        }
+        let doc_norms = norms_bytes
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|chunk| f64::from_le_bytes(*chunk))
+            .collect();
+
+        Ok(Self {
+            db,
+            stats,
+            doc_lengths,
+            doc_norms,
+        })
     }
 
     pub fn stats(&self) -> &IndexStats {
@@ -207,6 +233,10 @@ impl IndexReader {
 
     pub fn doc_length(&self, doc_id: u32) -> u32 {
         self.doc_lengths.get(doc_id as usize).copied().unwrap_or(0)
+    }
+
+    pub fn doc_norm(&self, doc_id: u32) -> f64 {
+        self.doc_norms.get(doc_id as usize).copied().unwrap_or(0.0)
     }
 
     /// Reads and decodes one term's posting list; `None` if the term is not indexed.
@@ -324,6 +354,7 @@ mod tests {
             for (doc_id, document) in index.documents.iter().enumerate() {
                 assert_eq!(reader.document(doc_id as u32).unwrap().as_ref(), Some(document));
                 assert_eq!(reader.doc_length(doc_id as u32), index.doc_lengths[doc_id]);
+                assert_eq!(reader.doc_norm(doc_id as u32), tfidf::document_norms(&index)[doc_id]);
             }
         }
     }
