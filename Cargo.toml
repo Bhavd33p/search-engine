@@ -1,0 +1,23 @@
+[package]
+name = "search-engine"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Full-text search engine: compressed positional inverted index, BM25/TF-IDF ranking, phrase and boolean queries, gRPC"
+license = "MIT"
+publish = false
+
+[lib]
+name = "search_engine"
+path = "src/lib.rs"
+
+[[bin]]
+name = "search-engine"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4.6", features = ["derive", "env"] }
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
