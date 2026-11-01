@@ -7,6 +7,7 @@
 pub mod analysis;
 pub mod cache;
 pub mod corpus;
+pub mod cranfield;
 pub mod crawler;
 pub mod engine;
 pub mod grpc;
