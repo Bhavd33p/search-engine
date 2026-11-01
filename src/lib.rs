@@ -7,3 +7,4 @@
 pub mod analysis;
 pub mod corpus;
 pub mod index;
+pub mod rank;
