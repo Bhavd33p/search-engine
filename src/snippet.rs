@@ -1,4 +1,9 @@
-//! Builds a short text excerpt around the first query match, with matches in **bold**.
+//! Builds a short text excerpt around a query match, with matches in **bold**.
+//!
+//! The engine already knows *where* the match is: the positional postings give
+//! the word position of each query term in the document. So the snippet only
+//! has to segment the text up to that word and stem the ~30 words it shows,
+//! instead of stemming the whole document looking for a match.
 
 use std::collections::BTreeMap;
 
@@ -6,32 +11,36 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::analysis::Analyzer;
 
-/// Returns up to `max_words` words of `text`, starting a little before the
-/// first word whose analysed term is in `terms`.
-pub fn make_snippet(analyzer: &Analyzer, text: &str, terms: &BTreeMap<String, u32>, max_words: usize) -> String {
-    let words: Vec<(usize, &str)> = text.unicode_word_indices().collect();
-    if words.is_empty() || max_words == 0 {
+/// Up to `max_words` words of `text`, starting a little before word number
+/// `anchor` (or at the beginning when there is no anchor). Words whose
+/// analysed term is in `terms` are highlighted.
+pub fn make_snippet(
+    analyzer: &Analyzer,
+    text: &str,
+    terms: &BTreeMap<String, u32>,
+    anchor: Option<usize>,
+    max_words: usize,
+) -> String {
+    let start = anchor.map_or(0, |word| word.saturating_sub(max_words / 4));
+    // One word past the window tells us whether to add a trailing ellipsis.
+    let window: Vec<(usize, &str)> = text.unicode_word_indices().skip(start).take(max_words + 1).collect();
+    let shown = window.len().min(max_words);
+    if shown == 0 {
         return String::new();
     }
-    let is_match = |word: &str| {
-        analyzer
-            .normalize_word(word)
-            .is_some_and(|term| terms.contains_key(&term))
-    };
-
-    let first_match = words.iter().position(|(_, word)| is_match(word)).unwrap_or(0);
-    let start = first_match.saturating_sub(max_words / 4);
-    let end = (start + max_words).min(words.len());
 
     let mut snippet = String::new();
     if start > 0 {
         snippet.push_str("… ");
     }
-    let mut previous_end = words[start].0;
-    for &(offset, word) in &words[start..end] {
+    let mut previous_end = window[0].0;
+    for &(offset, word) in &window[..shown] {
         // Keep the punctuation between words, but collapse runs of whitespace.
         push_collapsing_whitespace(&text[previous_end..offset], &mut snippet);
-        if is_match(word) {
+        if analyzer
+            .normalize_word(word)
+            .is_some_and(|term| terms.contains_key(&term))
+        {
             snippet.push_str("**");
             snippet.push_str(word);
             snippet.push_str("**");
@@ -40,7 +49,7 @@ pub fn make_snippet(analyzer: &Analyzer, text: &str, terms: &BTreeMap<String, u3
         }
         previous_end = offset + word.len();
     }
-    if end < words.len() {
+    if window.len() > shown {
         snippet.push_str(" …");
     }
     snippet
@@ -75,26 +84,31 @@ mod tests {
             &Analyzer::new(),
             "Rust is fast, and memory-safe.",
             &terms(&["memori"]),
+            Some(4),
             20,
         );
         assert_eq!(snippet, "Rust is fast, and **memory**-safe");
     }
 
     #[test]
-    fn windows_around_the_first_match() {
+    fn windows_around_the_anchor_word() {
         let text = (0..100).map(|i| format!("w{i}")).collect::<Vec<_>>().join(" ") + " target and more words";
-        let snippet = make_snippet(&Analyzer::new(), &text, &terms(&["target"]), 8);
+        let snippet = make_snippet(&Analyzer::new(), &text, &terms(&["target"]), Some(100), 8);
         assert_eq!(snippet, "… w98 w99 **target** and more words");
     }
 
     #[test]
-    fn falls_back_to_the_start_without_a_match() {
-        let snippet = make_snippet(&Analyzer::new(), "one two three four", &terms(&["zzz"]), 2);
+    fn starts_at_the_beginning_without_an_anchor() {
+        let snippet = make_snippet(&Analyzer::new(), "one two three four", &terms(&["zzz"]), None, 2);
         assert_eq!(snippet, "one two …");
     }
 
     #[test]
-    fn empty_text_gives_empty_snippet() {
-        assert_eq!(make_snippet(&Analyzer::new(), "", &terms(&["a"]), 10), "");
+    fn anchor_past_the_end_gives_empty_snippet() {
+        assert_eq!(
+            make_snippet(&Analyzer::new(), "one two", &terms(&["one"]), Some(50), 4),
+            ""
+        );
+        assert_eq!(make_snippet(&Analyzer::new(), "", &terms(&["a"]), None, 10), "");
     }
 }

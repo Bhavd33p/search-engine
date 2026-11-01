@@ -70,6 +70,12 @@ impl Analyzer {
         tokens
     }
 
+    /// Position of a document's first body word: the title's words come
+    /// first, then [`FIELD_POSITION_GAP`]. Mirrors [`Self::analyze_document`].
+    pub fn body_start_position(&self, title: &str) -> u32 {
+        title.unicode_words().count() as u32 + FIELD_POSITION_GAP
+    }
+
     /// Normalises a single word to its index term, or `None` for stop words and junk.
     pub fn normalize_word(&self, word: &str) -> Option<String> {
         if word.len() > MAX_WORD_BYTES {
@@ -159,8 +165,11 @@ mod tests {
 
     #[test]
     fn document_fields_are_separated_by_a_position_gap() {
-        let tokens = Analyzer::new().analyze_document("Ownership", "borrowing rules");
+        let analyzer = Analyzer::new();
+        let tokens = analyzer.analyze_document("Ownership", "borrowing rules");
         let positions: Vec<u32> = tokens.iter().map(|t| t.position).collect();
         assert_eq!(positions, [0, 1 + FIELD_POSITION_GAP, 2 + FIELD_POSITION_GAP]);
+        assert_eq!(analyzer.body_start_position("Ownership"), 1 + FIELD_POSITION_GAP);
+        assert_eq!(analyzer.body_start_position("The Rust Book"), 3 + FIELD_POSITION_GAP);
     }
 }

@@ -136,7 +136,8 @@ impl Engine {
     }
 
     pub fn search(&self, query: &AnalyzedQuery, k: usize, ranker: RankerKind) -> Result<SearchResults, SearchError> {
-        let ranked = self.rank(query, k, ranker)?;
+        let source = QueryPostings::new(self);
+        let ranked = self.rank_with(&source, query, k, ranker)?;
         let terms = query.scoring_terms();
         let mut hits = Vec::with_capacity(ranked.docs.len());
         for ScoredDoc { doc_id, score } in ranked.docs {
@@ -144,9 +145,10 @@ impl Engine {
                 .reader
                 .document(doc_id)?
                 .ok_or(StoreError::Missing("a stored document"))?;
+            let anchor = self.first_body_match(&source, &terms, doc_id, &document.title)?;
             hits.push(Hit {
                 doc_id,
-                snippet: make_snippet(&self.analyzer, &document.body, &terms, SNIPPET_WORDS),
+                snippet: make_snippet(&self.analyzer, &document.body, &terms, anchor, SNIPPET_WORDS),
                 external_id: document.id,
                 title: document.title,
                 url: document.url,
@@ -161,12 +163,21 @@ impl Engine {
 
     /// Steps 3–5 without loading stored fields: the ranked doc ids only.
     pub fn rank(&self, query: &AnalyzedQuery, k: usize, ranker: RankerKind) -> Result<RankedDocs, SearchError> {
-        let source = QueryPostings::new(self);
-        let candidates = matching_docs(query, &source, self.stats().num_docs)?;
+        self.rank_with(&QueryPostings::new(self), query, k, ranker)
+    }
+
+    fn rank_with(
+        &self,
+        source: &QueryPostings<'_>,
+        query: &AnalyzedQuery,
+        k: usize,
+        ranker: RankerKind,
+    ) -> Result<RankedDocs, SearchError> {
+        let candidates = matching_docs(query, source, self.stats().num_docs)?;
         let terms = query.scoring_terms();
         let scores = match ranker {
-            RankerKind::Bm25 => self.score(&self.config.bm25, &source, &candidates, &terms)?,
-            RankerKind::TfIdf => self.score(&TfIdf, &source, &candidates, &terms)?,
+            RankerKind::Bm25 => self.score(&self.config.bm25, source, &candidates, &terms)?,
+            RankerKind::TfIdf => self.score(&TfIdf, source, &candidates, &terms)?,
         };
         let scored = candidates
             .iter()
@@ -176,6 +187,33 @@ impl Engine {
             docs: top_k(scored, k),
             total_matches: candidates.len() as u32,
         })
+    }
+
+    /// Index of the first body word that matches a query term, read straight
+    /// from the positional postings (already fetched for scoring).
+    fn first_body_match(
+        &self,
+        source: &QueryPostings<'_>,
+        terms: &BTreeMap<String, u32>,
+        doc_id: u32,
+        title: &str,
+    ) -> Result<Option<usize>, StoreError> {
+        let body_start = self.analyzer.body_start_position(title);
+        let mut first: Option<u32> = None;
+        for term in terms.keys() {
+            let Some(list) = source.postings(term)? else {
+                continue;
+            };
+            let Some(posting) = list.get(doc_id) else {
+                continue;
+            };
+            // Positions are sorted: the first one at or after the body start is this term's earliest body match.
+            let index = posting.positions.partition_point(|&p| p < body_start);
+            if let Some(&position) = posting.positions.get(index) {
+                first = Some(first.map_or(position, |current| current.min(position)));
+            }
+        }
+        Ok(first.map(|position| (position - body_start) as usize))
     }
 
     /// Term-at-a-time scoring: for each query term, walk its posting list
