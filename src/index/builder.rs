@@ -102,6 +102,7 @@ impl InMemoryIndex {
 mod tests {
     use super::*;
     use crate::analysis::FIELD_POSITION_GAP;
+    use crate::index::postings::{Codec, encode};
 
     fn doc(id: &str, title: &str, body: &str) -> Document {
         Document {
@@ -138,6 +139,22 @@ mod tests {
         assert!(index.postings("the").is_none(), "stop words are not indexed");
         let terms: Vec<&str> = index.terms.iter().map(|(t, _)| t.as_str()).collect();
         assert!(terms.windows(2).all(|w| w[0] < w[1]), "terms are sorted");
+    }
+
+    #[test]
+    fn walkthrough_sentence_becomes_the_documented_bytes() {
+        // docs/WALKTHROUGH.md: "The quick brown foxes" as the title of doc 0.
+        let analyzer = Analyzer::new();
+        let index = InMemoryIndex::build(&analyzer, [doc("0", "The quick brown foxes", "")]);
+        let terms: Vec<&str> = index.terms.iter().map(|(t, _)| t.as_str()).collect();
+        assert_eq!(terms, ["brown", "fox", "quick"]);
+        let fox = index.postings("fox").unwrap();
+        assert_eq!(fox.get(0).unwrap().positions, [3]);
+        assert_eq!(encode(fox, Codec::VByte), [0x01, 0x00, 0x01, 0x03]);
+        assert_eq!(
+            encode(fox, Codec::FixedU32),
+            [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 3, 0, 0, 0]
+        );
     }
 
     #[test]
