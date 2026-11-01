@@ -69,8 +69,10 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
             '-' => {
                 chars.next();
                 match chars.peek() {
-                    Some(&(_, next)) if !next.is_whitespace() && next != ')' => tokens.push(Token::Minus),
-                    _ => {} // a lone '-' is punctuation, not an operator
+                    Some(&(_, next)) if !next.is_whitespace() && !matches!(next, ')' | '-') => {
+                        tokens.push(Token::Minus)
+                    }
+                    _ => {} // a '-' that does not start an operand is punctuation, not an operator
                 }
             }
             _ => {
@@ -154,5 +156,10 @@ mod tests {
         );
         assert_eq!(tokenize("state-of-the-art").unwrap(), [word("state-of-the-art")]);
         assert_eq!(tokenize("a - b").unwrap(), [word("a"), word("b")]);
+        assert_eq!(tokenize("a -- --b").unwrap(), [word("a"), Token::Minus, word("b")]);
+        assert_eq!(
+            tokenize("(a -)").unwrap(),
+            [Token::LeftParen, word("a"), Token::RightParen]
+        );
     }
 }

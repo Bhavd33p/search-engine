@@ -26,6 +26,8 @@ use crate::rank::{Bm25, CollectionStats, DocTermStats, RankerKind, Scorer, TermS
 use crate::snippet::make_snippet;
 
 const SNIPPET_WORDS: usize = 30;
+/// Longer queries are rejected before parsing; real queries are a few dozen bytes.
+pub const MAX_QUERY_BYTES: usize = 4096;
 
 #[derive(Debug, Clone, Copy)]
 pub struct EngineConfig {
@@ -119,6 +121,9 @@ impl Engine {
 
     /// Parses and analyses query text.
     pub fn analyze(&self, text: &str, mode: QueryMode) -> Result<AnalyzedQuery, SearchError> {
+        if text.len() > MAX_QUERY_BYTES {
+            return Err(ParseError::TooLong { max: MAX_QUERY_BYTES }.into());
+        }
         let analyzed = match mode {
             QueryMode::Boolean => AnalyzedQuery::analyze(&parse(text)?, &self.analyzer),
             QueryMode::AnyTerms => AnalyzedQuery::any_terms(text, &self.analyzer),

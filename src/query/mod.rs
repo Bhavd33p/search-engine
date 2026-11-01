@@ -101,6 +101,10 @@ pub enum ParseError {
     UnexpectedEnd,
     #[error("unexpected {0}")]
     Unexpected(String),
+    #[error("query nests parentheses or NOTs more than {} levels deep", parser::MAX_NESTING)]
+    TooDeep,
+    #[error("query is longer than {max} bytes")]
+    TooLong { max: usize },
 }
 
 #[cfg(test)]

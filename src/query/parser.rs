@@ -10,16 +10,26 @@
 //! ```
 //!
 //! So `a OR b c` is `a OR (b AND c)`, and `NOT a b` is `(NOT a) AND b`.
+//!
+//! Each `(` and each `NOT` is one level of recursion. Nesting is capped so a
+//! hostile query like 100,000 `(` cannot overflow the stack and crash the server.
 
 use super::lexer::{Token, tokenize};
 use super::{ParseError, Query};
+
+/// Deepest allowed nesting of parentheses and NOTs.
+pub const MAX_NESTING: usize = 64;
 
 pub fn parse(input: &str) -> Result<Query, ParseError> {
     let tokens = tokenize(input)?;
     if tokens.is_empty() {
         return Err(ParseError::Empty);
     }
-    let mut parser = Parser { tokens, position: 0 };
+    let mut parser = Parser {
+        tokens,
+        position: 0,
+        depth: 0,
+    };
     let query = parser.or_expr()?;
     match parser.peek() {
         None => Ok(query),
@@ -31,6 +41,7 @@ pub fn parse(input: &str) -> Result<Query, ParseError> {
 struct Parser {
     tokens: Vec<Token>,
     position: usize,
+    depth: usize,
 }
 
 impl Parser {
@@ -42,6 +53,17 @@ impl Parser {
         let token = self.tokens.get(self.position).cloned();
         self.position += 1;
         token
+    }
+
+    /// Runs `rule` one nesting level deeper, failing past [`MAX_NESTING`].
+    fn nested(&mut self, rule: fn(&mut Self) -> Result<Query, ParseError>) -> Result<Query, ParseError> {
+        if self.depth >= MAX_NESTING {
+            return Err(ParseError::TooDeep);
+        }
+        self.depth += 1;
+        let result = rule(self);
+        self.depth -= 1;
+        result
     }
 
     fn or_expr(&mut self) -> Result<Query, ParseError> {
@@ -75,7 +97,7 @@ impl Parser {
         match self.peek() {
             Some(Token::Not | Token::Minus) => {
                 self.next();
-                Ok(Query::Not(Box::new(self.unary()?)))
+                Ok(Query::Not(Box::new(self.nested(Self::unary)?)))
             }
             _ => self.primary(),
         }
@@ -86,7 +108,7 @@ impl Parser {
             Some(Token::Word(word)) => Ok(Query::Term(word)),
             Some(Token::Phrase(text)) => Ok(Query::Phrase(text)),
             Some(Token::LeftParen) => {
-                let inner = self.or_expr()?;
+                let inner = self.nested(Self::or_expr)?;
                 match self.next() {
                     Some(Token::RightParen) => Ok(inner),
                     _ => Err(ParseError::UnclosedParen),
@@ -176,5 +198,22 @@ mod tests {
         assert_eq!(parse("AND a"), Err(ParseError::Unexpected("AND".into())));
         assert_eq!(parse("a OR OR b"), Err(ParseError::Unexpected("OR".into())));
         assert_eq!(parse("NOT"), Err(ParseError::UnexpectedEnd));
+    }
+
+    #[test]
+    fn deep_nesting_is_rejected_instead_of_overflowing_the_stack() {
+        let deep_parens = format!("{}a{}", "(".repeat(100_000), ")".repeat(100_000));
+        assert_eq!(parse(&deep_parens), Err(ParseError::TooDeep));
+        assert_eq!(parse(&"NOT ".repeat(100_000)), Err(ParseError::TooDeep));
+        assert_eq!(
+            parse(&"-".repeat(100_000)),
+            Err(ParseError::Empty),
+            "dashes alone are punctuation"
+        );
+
+        let ok = format!("{}a{}", "(".repeat(MAX_NESTING), ")".repeat(MAX_NESTING));
+        assert_eq!(parse(&ok), Ok(term("a")));
+        let too_deep = format!("{}a{}", "(".repeat(MAX_NESTING + 1), ")".repeat(MAX_NESTING + 1));
+        assert_eq!(parse(&too_deep), Err(ParseError::TooDeep));
     }
 }

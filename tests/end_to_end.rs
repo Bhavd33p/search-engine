@@ -2,10 +2,11 @@
 
 use search_engine::analysis::Analyzer;
 use search_engine::corpus::Document;
-use search_engine::engine::{Engine, EngineConfig, QueryMode};
+use search_engine::engine::{Engine, EngineConfig, QueryMode, SearchError};
 use search_engine::index::builder::InMemoryIndex;
 use search_engine::index::postings::Codec;
 use search_engine::index::store::write_index;
+use search_engine::query::ParseError;
 use search_engine::rank::RankerKind;
 use tempfile::TempDir;
 
@@ -162,6 +163,21 @@ fn stop_word_only_query_is_rejected() {
     let (_dir, engine) = build(rust_corpus(), Codec::VByte);
     assert!(engine.analyze("the AND of", QueryMode::Boolean).is_err());
     assert!(engine.analyze("rust AND (", QueryMode::Boolean).is_err());
+}
+
+#[test]
+fn oversized_and_deeply_nested_queries_are_rejected() {
+    let (_dir, engine) = build(rust_corpus(), Codec::VByte);
+    let long = "rust ".repeat(1000);
+    assert!(matches!(
+        engine.analyze(&long, QueryMode::AnyTerms),
+        Err(SearchError::Parse(ParseError::TooLong { .. }))
+    ));
+    let deep = format!("{}rust{}", "(".repeat(1000), ")".repeat(1000));
+    assert!(matches!(
+        engine.analyze(&deep, QueryMode::Boolean),
+        Err(SearchError::Parse(ParseError::TooDeep))
+    ));
 }
 
 #[test]
