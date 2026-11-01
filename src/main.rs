@@ -3,9 +3,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use search_engine::analysis::Analyzer;
+use search_engine::bench::{self, BenchConfig};
 use search_engine::cache::result_cache::{ResultCache, ResultCacheConfig};
 use search_engine::corpus;
 use search_engine::cranfield;
@@ -43,7 +44,10 @@ enum Command {
     /// Serve the index over gRPC.
     Serve(ServeArgs),
     /// Benchmark index build, index size and query latency.
-    Bench,
+    Bench(BenchArgs),
+    /// Internal: one cold query in a fresh process, for `bench`.
+    #[command(hide = true)]
+    BenchColdQuery(ColdQueryArgs),
     /// Measure retrieval quality on the Cranfield collection.
     Eval(EvalArgs),
 }
@@ -140,6 +144,66 @@ struct ServeArgs {
     cache: CacheArgs,
 }
 
+#[derive(Clone, Copy, ValueEnum)]
+enum QueryFileFormat {
+    /// One query per line; blank lines and lines starting with '#' are skipped.
+    Lines,
+    /// Cranfield `cran.qry`.
+    Cranfield,
+}
+
+#[derive(Args)]
+struct BenchArgs {
+    /// Name shown in the report.
+    #[arg(long)]
+    name: String,
+    /// Corpus to index.
+    #[arg(long)]
+    input: PathBuf,
+    #[arg(long, value_enum, default_value_t = InputFormat::Jsonl)]
+    format: InputFormat,
+    /// Queries to time.
+    #[arg(long)]
+    queries: PathBuf,
+    #[arg(long, value_enum, default_value_t = QueryFileFormat::Lines)]
+    query_format: QueryFileFormat,
+    /// Run queries as free text (OR of all words) instead of the query language.
+    #[arg(long)]
+    any: bool,
+    /// Scratch directory for the benchmark indexes; must not exist yet.
+    #[arg(long)]
+    work_dir: PathBuf,
+    /// Redis for the result-cache rows; omitted rows are skipped.
+    #[arg(long, env = "REDIS_URL")]
+    redis_url: Option<String>,
+    #[arg(short, long, default_value_t = 10)]
+    k: usize,
+    /// Timed passes over the query set for each warm row.
+    #[arg(long, default_value_t = 10)]
+    rounds: usize,
+    /// Index builds per codec (the median is reported).
+    #[arg(long, default_value_t = 3)]
+    build_runs: usize,
+    /// Write the full report as JSON here.
+    #[arg(long)]
+    out: Option<PathBuf>,
+}
+
+#[derive(Args)]
+struct ColdQueryArgs {
+    #[arg(long)]
+    index: PathBuf,
+    #[arg(short, long)]
+    k: usize,
+    #[arg(long)]
+    any: bool,
+    #[arg(long)]
+    redis_url: Option<String>,
+    #[arg(long, default_value = "se")]
+    cache_namespace: String,
+    query: String,
+}
+
 #[derive(Args)]
 struct EvalArgs {
     /// Index built from Cranfield `cran.all.1400`.
@@ -229,9 +293,8 @@ async fn main() -> Result<()> {
         Command::Serve(args) => run_serve(args).await,
         Command::Crawl(args) => run_crawl(args).await,
         Command::Eval(args) => run_eval(args),
-        Command::Bench => {
-            bail!("not implemented yet")
-        }
+        Command::Bench(args) => run_bench(args).await,
+        Command::BenchColdQuery(args) => run_cold_query(args).await,
     }
 }
 
@@ -368,5 +431,53 @@ fn run_eval(args: EvalArgs) -> Result<()> {
             report.ranker, report.queries, report.recall_at_10, report.recall_at_100, report.map, report.ndcg_at_10
         );
     }
+    Ok(())
+}
+
+async fn run_bench(args: BenchArgs) -> Result<()> {
+    let documents = read_corpus(&args.input, args.format)?;
+    let queries = match args.query_format {
+        QueryFileFormat::Lines => std::fs::read_to_string(&args.queries)
+            .with_context(|| format!("reading {}", args.queries.display()))?
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .map(str::to_owned)
+            .collect(),
+        QueryFileFormat::Cranfield => cranfield::read_queries(&args.queries)?
+            .into_iter()
+            .map(|query| query.text)
+            .collect(),
+    };
+    let config = BenchConfig {
+        corpus_name: args.name,
+        corpus_path: args.input,
+        documents,
+        queries,
+        mode: query_mode(args.any),
+        k: args.k,
+        rounds: args.rounds,
+        build_runs: args.build_runs,
+        work_dir: args.work_dir,
+        redis_url: args.redis_url,
+        executable: std::env::current_exe()?,
+    };
+    let report = bench::run(config).await?;
+    if let Some(path) = &args.out {
+        std::fs::write(path, serde_json::to_string_pretty(&report)?)
+            .with_context(|| format!("writing {}", path.display()))?;
+    }
+    println!("{}", bench::to_markdown(&report));
+    Ok(())
+}
+
+async fn run_cold_query(args: ColdQueryArgs) -> Result<()> {
+    let cache = args.redis_url.map(|url| ResultCacheConfig {
+        url,
+        ttl: Duration::from_secs(60),
+        namespace: args.cache_namespace,
+    });
+    let sample = bench::cold_query(&args.index, &args.query, query_mode(args.any), args.k, cache).await?;
+    println!("{}", serde_json::to_string(&sample)?);
     Ok(())
 }

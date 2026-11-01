@@ -6,6 +6,7 @@
 
 pub mod analysis;
 pub mod baseline;
+pub mod bench;
 pub mod cache;
 pub mod corpus;
 pub mod cranfield;
