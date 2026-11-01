@@ -1,0 +1,26 @@
+# Engine + Redis. Build an index into ./data/index first, for example:
+#   docker compose run --rm engine index --input /data/rust-docs.jsonl --index /data/index
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  engine:
+    build: .
+    command: ["serve", "--index", "/data/index", "--addr", "0.0.0.0:50051"]
+    environment:
+      REDIS_URL: redis://redis:6379
+      RUST_LOG: info
+    ports:
+      - "50051:50051"
+    volumes:
+      - ./data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    stop_grace_period: 10s
