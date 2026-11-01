@@ -1,3 +1,4 @@
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -8,11 +9,13 @@ use search_engine::analysis::Analyzer;
 use search_engine::cache::result_cache::{ResultCache, ResultCacheConfig};
 use search_engine::corpus;
 use search_engine::engine::{Engine, EngineConfig, QueryMode};
+use search_engine::grpc;
 use search_engine::index::builder::InMemoryIndex;
 use search_engine::index::postings::Codec;
 use search_engine::index::store;
 use search_engine::rank::{Bm25, RankerKind};
 use search_engine::service::SearchService;
+use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
@@ -35,7 +38,7 @@ enum Command {
     /// Run a query against an index.
     Search(SearchArgs),
     /// Serve the index over gRPC.
-    Serve,
+    Serve(ServeArgs),
     /// Benchmark index build, index size and query latency.
     Bench,
     /// Measure retrieval quality on the Cranfield collection.
@@ -78,6 +81,20 @@ struct SearchArgs {
     /// Print results as JSON.
     #[arg(long)]
     json: bool,
+}
+
+#[derive(Args)]
+struct ServeArgs {
+    /// Index directory.
+    #[arg(long)]
+    index: PathBuf,
+    /// Address to listen on.
+    #[arg(long, default_value = "127.0.0.1:50051")]
+    addr: SocketAddr,
+    #[command(flatten)]
+    engine: EngineArgs,
+    #[command(flatten)]
+    cache: CacheArgs,
 }
 
 #[derive(Args, Clone, Copy)]
@@ -145,7 +162,8 @@ async fn main() -> Result<()> {
     match cli.command {
         Command::Index(args) => run_index(args),
         Command::Search(args) => run_search(args).await,
-        Command::Crawl | Command::Serve | Command::Bench | Command::Eval => {
+        Command::Serve(args) => run_serve(args).await,
+        Command::Crawl | Command::Bench | Command::Eval => {
             bail!("not implemented yet")
         }
     }
@@ -207,5 +225,25 @@ async fn run_search(args: SearchArgs) -> Result<()> {
         }
         println!("    {}", hit.snippet);
     }
+    Ok(())
+}
+
+async fn run_serve(args: ServeArgs) -> Result<()> {
+    let engine = Engine::open(&args.index, args.engine.engine_config())
+        .with_context(|| format!("opening index {}", args.index.display()))?;
+    let stats = engine.stats().clone();
+    let service = Arc::new(SearchService::new(Arc::new(engine), args.cache.connect().await));
+    let listener = tokio::net::TcpListener::bind(args.addr)
+        .await
+        .with_context(|| format!("binding {}", args.addr))?;
+    info!(
+        addr = %listener.local_addr()?,
+        docs = stats.num_docs,
+        terms = stats.num_terms,
+        index_version = %stats.index_version,
+        "gRPC server listening"
+    );
+    grpc::serve(listener, service, grpc::shutdown_signal()).await?;
+    info!("shut down cleanly");
     Ok(())
 }

@@ -8,6 +8,7 @@ pub mod analysis;
 pub mod cache;
 pub mod corpus;
 pub mod engine;
+pub mod grpc;
 pub mod index;
 pub mod query;
 pub mod rank;

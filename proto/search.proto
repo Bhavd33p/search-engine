@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package search.v1;
+
+// Full-text search over one index.
+service SearchApi {
+  // Ranked hits for a query.
+  rpc Search(SearchRequest) returns (SearchResponse);
+  // Index and cache statistics.
+  rpc Stats(StatsRequest) returns (StatsResponse);
+}
+
+enum Ranker {
+  // The server default, BM25.
+  RANKER_UNSPECIFIED = 0;
+  RANKER_BM25 = 1;
+  RANKER_TFIDF = 2;
+}
+
+message SearchRequest {
+  // Query language: implicit AND, OR, NOT / leading '-', parentheses, "exact phrase".
+  string query = 1;
+  // Number of hits to return; 0 means 10. Capped at 1000.
+  uint32 k = 2;
+  Ranker ranker = 3;
+  // Treat `query` as free text (OR of every word) instead of the query language.
+  bool any_terms = 4;
+}
+
+message Hit {
+  uint32 doc_id = 1;
+  string external_id = 2;
+  string title = 3;
+  string url = 4;
+  double score = 5;
+  string snippet = 6;
+}
+
+message SearchResponse {
+  repeated Hit hits = 1;
+  // Documents that matched, before keeping the top k.
+  uint32 total_matches = 2;
+  // True when the result came from the Redis result cache.
+  bool cache_hit = 3;
+  // Server-side time spent on the query.
+  uint64 took_micros = 4;
+}
+
+message StatsRequest {}
+
+message StatsResponse {
+  uint32 num_docs = 1;
+  uint64 num_terms = 2;
+  double avg_doc_len = 3;
+  string index_version = 4;
+  string codec = 5;
+  uint64 hot_term_capacity = 6;
+  uint64 hot_terms_resident = 7;
+  uint64 hot_term_bytes = 8;
+  uint64 hot_term_hits = 9;
+  uint64 hot_term_misses = 10;
+  bool result_cache_enabled = 11;
+  uint64 result_cache_hits = 12;
+  uint64 result_cache_misses = 13;
+  uint64 result_cache_errors = 14;
+}
