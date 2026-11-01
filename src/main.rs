@@ -4,12 +4,14 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use search_engine::analysis::Analyzer;
 use search_engine::cache::result_cache::{ResultCache, ResultCacheConfig};
 use search_engine::corpus;
+use search_engine::cranfield;
 use search_engine::crawler::{self, CrawlConfig};
 use search_engine::engine::{Engine, EngineConfig, QueryMode};
+use search_engine::eval::evaluate_cranfield;
 use search_engine::grpc;
 use search_engine::index::builder::InMemoryIndex;
 use search_engine::index::postings::Codec;
@@ -43,7 +45,7 @@ enum Command {
     /// Benchmark index build, index size and query latency.
     Bench,
     /// Measure retrieval quality on the Cranfield collection.
-    Eval,
+    Eval(EvalArgs),
 }
 
 #[derive(Args)]
@@ -76,11 +78,21 @@ struct CrawlArgs {
     timeout_secs: u64,
 }
 
+#[derive(Clone, Copy, ValueEnum)]
+enum InputFormat {
+    /// One JSON document per line (what `crawl` writes).
+    Jsonl,
+    /// Cranfield `cran.all.1400`.
+    Cranfield,
+}
+
 #[derive(Args)]
 struct IndexArgs {
-    /// Corpus to index (JSONL, one document per line).
+    /// Corpus to index.
     #[arg(long)]
     input: PathBuf,
+    #[arg(long, value_enum, default_value_t = InputFormat::Jsonl)]
+    format: InputFormat,
     /// Directory to create the index in.
     #[arg(long)]
     index: PathBuf,
@@ -126,6 +138,27 @@ struct ServeArgs {
     engine: EngineArgs,
     #[command(flatten)]
     cache: CacheArgs,
+}
+
+#[derive(Args)]
+struct EvalArgs {
+    /// Index built from Cranfield `cran.all.1400`.
+    #[arg(long)]
+    index: PathBuf,
+    /// Cranfield `cran.qry`.
+    #[arg(long)]
+    queries: PathBuf,
+    /// Cranfield `cranqrel`.
+    #[arg(long)]
+    qrels: PathBuf,
+    /// Results retrieved per query (the depth MAP is computed to).
+    #[arg(long, default_value_t = 1000)]
+    depth: usize,
+    #[command(flatten)]
+    engine: EngineArgs,
+    /// Print JSON instead of a table.
+    #[arg(long)]
+    json: bool,
 }
 
 #[derive(Args, Clone, Copy)]
@@ -195,7 +228,8 @@ async fn main() -> Result<()> {
         Command::Search(args) => run_search(args).await,
         Command::Serve(args) => run_serve(args).await,
         Command::Crawl(args) => run_crawl(args).await,
-        Command::Bench | Command::Eval => {
+        Command::Eval(args) => run_eval(args),
+        Command::Bench => {
             bail!("not implemented yet")
         }
     }
@@ -227,8 +261,7 @@ async fn run_crawl(args: CrawlArgs) -> Result<()> {
 
 fn run_index(args: IndexArgs) -> Result<()> {
     let started = Instant::now();
-    let documents =
-        corpus::read_jsonl(&args.input).with_context(|| format!("reading corpus {}", args.input.display()))?;
+    let documents = read_corpus(&args.input, args.format)?;
     let read_secs = started.elapsed().as_secs_f64();
 
     let analyzer = Analyzer::new();
@@ -301,5 +334,39 @@ async fn run_serve(args: ServeArgs) -> Result<()> {
     );
     grpc::serve(listener, service, grpc::shutdown_signal()).await?;
     info!("shut down cleanly");
+    Ok(())
+}
+
+fn read_corpus(path: &std::path::Path, format: InputFormat) -> Result<Vec<corpus::Document>> {
+    let context = || format!("reading corpus {}", path.display());
+    Ok(match format {
+        InputFormat::Jsonl => corpus::read_jsonl(path).with_context(context)?,
+        InputFormat::Cranfield => cranfield::read_documents(path).with_context(context)?,
+    })
+}
+
+fn run_eval(args: EvalArgs) -> Result<()> {
+    let engine = Engine::open(&args.index, args.engine.engine_config())
+        .with_context(|| format!("opening index {}", args.index.display()))?;
+    let queries = cranfield::read_queries(&args.queries)?;
+    let judgements = cranfield::read_judgements(&args.qrels)?;
+
+    let reports = [RankerKind::Bm25, RankerKind::TfIdf]
+        .into_iter()
+        .map(|ranker| evaluate_cranfield(&engine, &queries, &judgements, ranker, args.depth))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    if args.json {
+        println!("{}", serde_json::to_string_pretty(&reports)?);
+        return Ok(());
+    }
+    println!("| Ranker | Queries | Recall@10 | Recall@100 | MAP | nDCG@10 |");
+    println!("|--------|--------:|----------:|-----------:|----:|--------:|");
+    for report in &reports {
+        println!(
+            "| {} | {} | {:.4} | {:.4} | {:.4} | {:.4} |",
+            report.ranker, report.queries, report.recall_at_10, report.recall_at_100, report.map, report.ndcg_at_10
+        );
+    }
     Ok(())
 }

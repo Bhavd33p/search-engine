@@ -10,6 +10,7 @@ pub mod corpus;
 pub mod cranfield;
 pub mod crawler;
 pub mod engine;
+pub mod eval;
 pub mod grpc;
 pub mod index;
 pub mod query;
