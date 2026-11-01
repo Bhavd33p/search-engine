@@ -1,0 +1,123 @@
+{
+  "corpus": "Rust docs crawl",
+  "num_docs": 300,
+  "corpus_file_bytes": 1542301,
+  "text_bytes": 1487492,
+  "num_terms": 5128,
+  "num_postings": 42696,
+  "num_positions": 152294,
+  "builds": [
+    {
+      "codec": "v_byte",
+      "runs": 3,
+      "median_analyse_secs": 0.050395584,
+      "median_write_secs": 0.008576291,
+      "median_total_secs": 0.058971875,
+      "docs_per_sec": 5087.170791161041,
+      "postings_bytes": 315504,
+      "fixed_u32_postings_bytes": 971256,
+      "stored_docs_bytes": 1542001,
+      "sst_bytes_by_column_family": [
+        [
+          "postings",
+          403000
+        ],
+        [
+          "docs",
+          1551783
+        ],
+        [
+          "meta",
+          4383
+        ]
+      ],
+      "index_dir_bytes": 2068688
+    },
+    {
+      "codec": "fixed_u32",
+      "runs": 3,
+      "median_analyse_secs": 0.050463,
+      "median_write_secs": 0.008817167,
+      "median_total_secs": 0.059087542,
+      "docs_per_sec": 5077.21238429583,
+      "postings_bytes": 971256,
+      "fixed_u32_postings_bytes": 971256,
+      "stored_docs_bytes": 1542001,
+      "sst_bytes_by_column_family": [
+        [
+          "postings",
+          1062977
+        ],
+        [
+          "docs",
+          1551783
+        ],
+        [
+          "meta",
+          4387
+        ]
+      ],
+      "index_dir_bytes": 2728688
+    }
+  ],
+  "queries": 39,
+  "rounds": 20,
+  "k": 10,
+  "any_terms": false,
+  "latency": {
+    "cold": {
+      "samples": 39,
+      "p50_us": 496.33299999999997,
+      "p95_us": 750.25,
+      "p99_us": 755.25,
+      "mean_us": 517.3782564102564
+    },
+    "cold_engine_open": {
+      "samples": 39,
+      "p50_us": 906.4169999999999,
+      "p95_us": 1294.125,
+      "p99_us": 1442.7089999999998,
+      "mean_us": 942.4712820512822
+    },
+    "warm_hot_terms_off": {
+      "samples": 780,
+      "p50_us": 131.916,
+      "p95_us": 368.625,
+      "p99_us": 400.79200000000003,
+      "mean_us": 156.0704230769231
+    },
+    "warm_hot_terms_on": {
+      "samples": 780,
+      "p50_us": 124.70800000000001,
+      "p95_us": 365.125,
+      "p99_us": 391.875,
+      "mean_us": 148.55551410256413
+    },
+    "warm_redis_hit": {
+      "samples": 780,
+      "p50_us": 71.416,
+      "p95_us": 110.041,
+      "p99_us": 116.875,
+      "mean_us": 80.92062692307698
+    },
+    "baseline_linear_scan": {
+      "samples": 39,
+      "p50_us": 46393.75,
+      "p95_us": 48049.583,
+      "p99_us": 48194.916,
+      "mean_us": 46571.033076923086
+    }
+  },
+  "hot_terms_after_warm": {
+    "capacity": 1000000,
+    "resident_terms": 61,
+    "resident_bytes": 159660,
+    "hits": 1682,
+    "misses": 82
+  },
+  "redis_hit_ratio": 1.0,
+  "baseline_agreement": [
+    39,
+    39
+  ]
+}

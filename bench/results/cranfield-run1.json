@@ -1,0 +1,123 @@
+{
+  "corpus": "Cranfield",
+  "num_docs": 1400,
+  "corpus_file_bytes": 1644706,
+  "text_bytes": 1545666,
+  "num_terms": 5029,
+  "num_postings": 86755,
+  "num_positions": 143789,
+  "builds": [
+    {
+      "codec": "v_byte",
+      "runs": 3,
+      "median_analyse_secs": 0.044965083,
+      "median_write_secs": 0.009139167,
+      "median_total_secs": 0.054310625,
+      "docs_per_sec": 25777.644797864137,
+      "postings_bytes": 405063,
+      "fixed_u32_postings_bytes": 1289312,
+      "stored_docs_bytes": 1604759,
+      "sst_bytes_by_column_family": [
+        [
+          "postings",
+          488260
+        ],
+        [
+          "docs",
+          1635800
+        ],
+        [
+          "meta",
+          14485
+        ]
+      ],
+      "index_dir_bytes": 2248068
+    },
+    {
+      "codec": "fixed_u32",
+      "runs": 3,
+      "median_analyse_secs": 0.042961291,
+      "median_write_secs": 0.009219542,
+      "median_total_secs": 0.052180833,
+      "docs_per_sec": 26829.774833222764,
+      "postings_bytes": 1289312,
+      "fixed_u32_postings_bytes": 1289312,
+      "stored_docs_bytes": 1604759,
+      "sst_bytes_by_column_family": [
+        [
+          "postings",
+          1377616
+        ],
+        [
+          "docs",
+          1635800
+        ],
+        [
+          "meta",
+          14488
+        ]
+      ],
+      "index_dir_bytes": 3137446
+    }
+  ],
+  "queries": 225,
+  "rounds": 5,
+  "k": 10,
+  "any_terms": true,
+  "latency": {
+    "cold": {
+      "samples": 225,
+      "p50_us": 513.292,
+      "p95_us": 593.709,
+      "p99_us": 628.9159999999999,
+      "mean_us": 514.9001822222223
+    },
+    "cold_engine_open": {
+      "samples": 225,
+      "p50_us": 919.125,
+      "p95_us": 1006.875,
+      "p99_us": 1248.375,
+      "mean_us": 931.8435066666667
+    },
+    "warm_hot_terms_off": {
+      "samples": 1125,
+      "p50_us": 144.333,
+      "p95_us": 200.625,
+      "p99_us": 225.25,
+      "mean_us": 146.68306666666655
+    },
+    "warm_hot_terms_on": {
+      "samples": 1125,
+      "p50_us": 111.041,
+      "p95_us": 145.16600000000003,
+      "p99_us": 159.625,
+      "mean_us": 112.60829599999995
+    },
+    "warm_redis_hit": {
+      "samples": 1125,
+      "p50_us": 71.5,
+      "p95_us": 85.25,
+      "p99_us": 93.54100000000001,
+      "mean_us": 73.0080826666667
+    },
+    "baseline_linear_scan": {
+      "samples": 225,
+      "p50_us": 39614.834,
+      "p95_us": 41312.834,
+      "p99_us": 42024.0,
+      "mean_us": 39819.4948311111
+    }
+  },
+  "hot_terms_after_warm": {
+    "capacity": 1000000,
+    "resident_terms": 684,
+    "resident_bytes": 2294920,
+    "hits": 12798,
+    "misses": 840
+  },
+  "redis_hit_ratio": 1.0,
+  "baseline_agreement": [
+    225,
+    225
+  ]
+}

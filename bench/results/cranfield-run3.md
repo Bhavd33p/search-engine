@@ -6,8 +6,8 @@
 
 | Postings codec | Analyse + invert (s) | Write to RocksDB (s) | Total (s) | Docs/sec |
 |---|---:|---:|---:|---:|
-| VByte | 0.045 | 0.010 | 0.055 | 25506 |
-| FixedU32 | 0.044 | 0.011 | 0.055 | 25460 |
+| VByte | 0.044 | 0.009 | 0.053 | 26443 |
+| FixedU32 | 0.043 | 0.010 | 0.053 | 26557 |
 
 **Index size**
 
@@ -22,13 +22,13 @@ VByte postings are 31.4% of the fixed-width u32 baseline (3.18× smaller) and 26
 
 | Path | Samples | p50 (µs) | p95 (µs) | p99 (µs) | Mean (µs) |
 |---|---:|---:|---:|---:|---:|
-| Cold: fresh process, empty caches | 225 | 428.2 | 504.3 | 547.0 | 432.8 |
-| Warm, hot-term cache off | 1125 | 146.9 | 206.5 | 232.7 | 149.8 |
-| Warm, hot-term cache on | 1125 | 109.9 | 140.2 | 154.2 | 111.1 |
-| Warm, Redis result-cache hit | 1125 | 37.2 | 46.2 | 52.8 | 37.5 |
-| Baseline: linear scan (no index) | 225 | 40467.6 | 41634.6 | 44080.4 | 40643.3 |
+| Cold: fresh process, empty caches | 225 | 516.4 | 592.0 | 625.2 | 515.2 |
+| Warm, hot-term cache off | 1125 | 146.4 | 204.3 | 228.8 | 149.0 |
+| Warm, hot-term cache on | 1125 | 109.1 | 141.3 | 154.6 | 110.2 |
+| Warm, Redis result-cache hit | 1125 | 69.9 | 83.2 | 92.6 | 71.2 |
+| Baseline: linear scan (no index) | 225 | 39816.6 | 41416.2 | 41957.1 | 40006.0 |
 
-Engine open in the cold child process (RocksDB open + metadata load): p50 933.9 µs, p99 1172.6 µs — not included in the cold row.
+Engine open in the cold child process (RocksDB open + metadata load): p50 914.8 µs, p99 1234.9 µs — not included in the cold row.
 Hot-term cache after the warm run: 684 terms resident (~2294920 bytes), 12798 hits / 840 misses.
 Redis hit ratio during the timed warm-Redis rounds: 100.0%.
 Baseline returned the same top-10 doc ids as the index for 225/225 queries.
