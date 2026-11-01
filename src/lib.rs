@@ -5,4 +5,5 @@
 //! BM25 or TF-IDF → serve over gRPC.
 
 pub mod analysis;
+pub mod corpus;
 pub mod index;

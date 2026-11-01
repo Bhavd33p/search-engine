@@ -20,6 +20,7 @@ anyhow = "1"
 clap = { version = "4.6", features = ["derive", "env"] }
 rust-stemmers = "1.2"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -27,3 +28,4 @@ unicode-segmentation = "1.13"
 
 [dev-dependencies]
 proptest = "1.12"
+tempfile = "3.27"
