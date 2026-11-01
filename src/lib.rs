@@ -5,6 +5,7 @@
 //! BM25 or TF-IDF → serve over gRPC.
 
 pub mod analysis;
+pub mod baseline;
 pub mod cache;
 pub mod corpus;
 pub mod cranfield;
