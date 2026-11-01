@@ -3,3 +3,5 @@
 //! Pipeline: crawl → analyse (tokenise, stop words, stem) → invert into a
 //! compressed positional index stored in RocksDB → parse queries → rank with
 //! BM25 or TF-IDF → serve over gRPC.
+
+pub mod analysis;

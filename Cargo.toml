@@ -18,6 +18,8 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1"
 clap = { version = "4.6", features = ["derive", "env"] }
+rust-stemmers = "1.2"
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+unicode-segmentation = "1.13"
