@@ -9,6 +9,8 @@
 //! (ownership OR borrow) -unsafe  grouping
 //! ```
 
+pub mod analyzed;
+pub mod eval;
 mod lexer;
 pub mod ops;
 mod parser;
@@ -17,6 +19,7 @@ use std::fmt;
 
 use thiserror::Error;
 
+pub use analyzed::AnalyzedQuery;
 pub use parser::parse;
 
 /// A parsed query, before text analysis. Words are kept exactly as typed.
