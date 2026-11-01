@@ -87,13 +87,17 @@ fn site() -> HashMap<&'static str, Page> {
     ])
 }
 
-/// A minimal HTTP/1.1 server: one request per connection, then close.
 async fn serve_site() -> (String, Arc<Mutex<Vec<String>>>) {
+    serve(site()).await
+}
+
+/// A minimal HTTP/1.1 server: one request per connection, then close.
+async fn serve(pages: HashMap<&'static str, Page>) -> (String, Arc<Mutex<Vec<String>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let requested = Arc::new(Mutex::new(Vec::new()));
     let log = Arc::clone(&requested);
-    let pages = Arc::new(site());
+    let pages = Arc::new(pages);
     tokio::spawn(async move {
         loop {
             let Ok((mut stream, _)) = listener.accept().await else {
@@ -201,4 +205,35 @@ async fn excluded_patterns_are_not_fetched() {
     config.excludes = vec!["b.html".into()];
     crawl(config, &dir.path().join("corpus.jsonl")).await.unwrap();
     assert!(!requested.lock().unwrap().iter().any(|p| p == "/docs/b.html"));
+}
+
+#[tokio::test]
+async fn follows_a_redirected_robots_txt() {
+    let mut pages = site();
+    pages.insert(
+        "/robots.txt",
+        Page {
+            status: "301 Moved Permanently",
+            extra_header: "Location: /real-robots.txt\r\n",
+            ..html("")
+        },
+    );
+    pages.insert(
+        "/real-robots.txt",
+        Page {
+            content_type: "text/plain",
+            ..html("User-agent: *\nDisallow: /docs/secret.html\n")
+        },
+    );
+    let (base, requested) = serve(pages).await;
+    let dir = tempfile::tempdir().unwrap();
+    let report = crawl(config(&base, 100), &dir.path().join("corpus.jsonl"))
+        .await
+        .unwrap();
+
+    assert_eq!(report.pages_written, 4);
+    assert_eq!(report.disallowed_by_robots, 1);
+    let requested = requested.lock().unwrap().clone();
+    assert!(requested.iter().any(|p| p == "/real-robots.txt"));
+    assert!(!requested.iter().any(|p| p == "/docs/secret.html"));
 }

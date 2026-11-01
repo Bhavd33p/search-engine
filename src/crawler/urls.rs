@@ -37,6 +37,9 @@ pub fn normalize(url: &Url) -> Option<Url> {
 /// The part of the web a crawl may visit: same host as a seed, and under the
 /// seed's directory. Seeding `https://doc.rust-lang.org/book/` keeps the crawl
 /// inside the book instead of wandering into the standard library docs.
+///
+/// A seed's last path segment counts as a directory unless it has a file
+/// extension, so `/book` scopes to `/book/` and `/docs/start.html` to `/docs/`.
 #[derive(Debug, Clone)]
 pub struct Scope {
     prefixes: Vec<(String, String)>,
@@ -49,8 +52,14 @@ impl Scope {
             .filter_map(|seed| {
                 let host = seed.host_str()?.to_string();
                 let path = seed.path();
-                let directory = &path[..path.rfind('/').map_or(0, |i| i + 1)];
-                Some((host, directory.to_string()))
+                let last_slash = path.rfind('/').map_or(0, |i| i + 1);
+                let last_segment = &path[last_slash..];
+                let directory = if last_segment.is_empty() || last_segment.contains('.') {
+                    path[..last_slash].to_string()
+                } else {
+                    format!("{path}/")
+                };
+                Some((host, directory))
             })
             .collect();
         Self { prefixes }
@@ -119,5 +128,11 @@ mod tests {
 
         let file_seed = Scope::from_seeds(&[Url::parse("https://example.org/docs/start.html").unwrap()]);
         assert!(file_seed.contains(&Url::parse("https://example.org/docs/next.html").unwrap()));
+
+        // No trailing slash: still only the book, not the whole host.
+        let no_slash = Scope::from_seeds(&[Url::parse("https://doc.rust-lang.org/book").unwrap()]);
+        assert!(no_slash.contains(&inside));
+        assert!(!no_slash.contains(&other_path));
+        assert!(!no_slash.contains(&Url::parse("https://doc.rust-lang.org/bookshelf/").unwrap()));
     }
 }

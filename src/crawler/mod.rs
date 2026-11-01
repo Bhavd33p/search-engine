@@ -1,8 +1,11 @@
 //! A polite, asynchronous web crawler that writes a JSONL corpus.
 //!
 //! Politeness rules it follows:
-//! * fetches and obeys each host's `robots.txt` (including `Crawl-delay`);
-//! * waits at least `delay` between requests to the same host;
+//! * fetches and obeys each host's `robots.txt` (including `Crawl-delay`;
+//!   a host asking for more than a minute between requests is skipped);
+//! * waits at least `delay` (or the site's `Crawl-delay`, if longer) between
+//!   requests to the same host;
+//! * backs off a host for ten delays after a 429 or 503 response;
 //! * identifies itself with a descriptive User-Agent;
 //! * stays inside the seeds' host and directory, and stops at `max_pages`.
 //!
@@ -100,6 +103,12 @@ pub async fn crawl(config: CrawlConfig, output: &Path) -> Result<CrawlReport, Cr
         .timeout(config.request_timeout)
         .redirect(redirect::Policy::none())
         .build()?;
+    // robots.txt redirects (http → https, apex → www) are followed, as RFC 9309 asks.
+    let robots_client = Client::builder()
+        .user_agent(config.user_agent.clone())
+        .timeout(config.request_timeout)
+        .redirect(redirect::Policy::limited(5))
+        .build()?;
     let throttle = Arc::new(HostThrottle::default());
     let mut robots: HashMap<String, Arc<RobotsPolicy>> = HashMap::new();
 
@@ -126,7 +135,7 @@ pub async fn crawl(config: CrawlConfig, output: &Path) -> Result<CrawlReport, Cr
             let policy = match robots.get(&host) {
                 Some(policy) => Arc::clone(policy),
                 None => {
-                    let policy = Arc::new(fetch_robots(&client, &throttle, &url, &config).await);
+                    let policy = Arc::new(fetch_robots(&robots_client, &throttle, &url, &config).await);
                     robots.insert(host.clone(), Arc::clone(&policy));
                     policy
                 }
@@ -135,9 +144,7 @@ pub async fn crawl(config: CrawlConfig, output: &Path) -> Result<CrawlReport, Cr
                 report.disallowed_by_robots += 1;
                 continue;
             }
-            let delay = policy
-                .crawl_delay()
-                .map_or(config.delay, |requested| requested.max(config.delay));
+            let delay = host_delay(&policy, config.delay);
             let (client, throttle, max_body) = (client.clone(), Arc::clone(&throttle), config.max_body_bytes);
             in_flight.spawn(async move {
                 throttle.wait_turn(&host, delay).await;
@@ -197,6 +204,14 @@ pub async fn crawl(config: CrawlConfig, output: &Path) -> Result<CrawlReport, Cr
             Fetched::HttpError(status) => {
                 warn!(%url, %status, "HTTP error");
                 report.http_errors += 1;
+                if matches!(status, StatusCode::TOO_MANY_REQUESTS | StatusCode::SERVICE_UNAVAILABLE)
+                    && let Some(host) = url.host_str()
+                {
+                    let delay = robots
+                        .get(host)
+                        .map_or(config.delay, |policy| host_delay(policy, config.delay));
+                    throttle.back_off(host, delay * BACKOFF_DELAYS).await;
+                }
             }
             Fetched::Failed(error) => {
                 warn!(%url, %error, "fetch failed");
@@ -210,6 +225,16 @@ pub async fn crawl(config: CrawlConfig, output: &Path) -> Result<CrawlReport, Cr
     in_flight.abort_all();
     writer.finish()?;
     Ok(report)
+}
+
+/// After a 429 or 503, the host gets no requests for this many delays.
+const BACKOFF_DELAYS: u32 = 10;
+
+/// Delay between requests to one host: ours, or the site's Crawl-delay if longer.
+fn host_delay(policy: &RobotsPolicy, configured: Duration) -> Duration {
+    policy
+        .crawl_delay()
+        .map_or(configured, |requested| requested.max(configured))
 }
 
 async fn fetch_robots(client: &Client, throttle: &HostThrottle, url: &Url, config: &CrawlConfig) -> RobotsPolicy {
@@ -230,6 +255,13 @@ async fn fetch_robots(client: &Client, throttle: &HostThrottle, url: &Url, confi
     let body = response.bytes().await.unwrap_or_default();
     let policy = RobotsPolicy::from_response(Some(status), &body, ROBOTS_AGENT);
     info!(%robots_url, status, crawl_delay = ?policy.crawl_delay(), "fetched robots.txt");
+    if let (Some(host), Some(requested)) = (url.host_str(), policy.crawl_delay())
+        && requested > config.delay
+    {
+        // The robots.txt request itself was spaced by our own delay; make the
+        // first page wait for the site's longer Crawl-delay too.
+        throttle.back_off(host, requested).await;
+    }
     policy
 }
 
