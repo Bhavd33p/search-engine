@@ -4,7 +4,8 @@
 //! * size: VByte postings vs fixed-width postings vs the raw corpus;
 //! * latency, all through [`SearchService`] (parse → analyse → search → snippets):
 //!   - cold: a fresh process per query — empty hot-term cache, a newly opened
-//!     RocksDB (empty block cache) and, with Redis, an empty result-cache namespace.
+//!     RocksDB (empty block cache) and, with Redis, an empty result-cache
+//!     namespace, so the query also pays a Redis miss and the write-back.
 //!     The OS page cache cannot be dropped without root, so index files may
 //!     still be in memory;
 //!   - warm, hot-term cache off: same process, every query seen before, LRU disabled;
@@ -143,8 +144,10 @@ pub async fn run(config: BenchConfig) -> Result<BenchReport> {
     let cold_namespace = unique_namespace("bench-cold");
     let mut cold = Vec::new();
     let mut cold_open = Vec::new();
-    for query in &config.queries {
-        let sample = cold_query_in_child(&config, &vbyte_dir, query, &cold_namespace)?;
+    for (index, query) in config.queries.iter().enumerate() {
+        // A namespace per query: a repeated query must still miss Redis.
+        let namespace = format!("{cold_namespace}-{index}");
+        let sample = cold_query_in_child(&config, &vbyte_dir, query, &namespace)?;
         cold.push(sample.search_us);
         cold_open.push(sample.open_us);
     }
