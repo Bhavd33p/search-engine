@@ -8,6 +8,7 @@ use clap::{Args, Parser, Subcommand};
 use search_engine::analysis::Analyzer;
 use search_engine::cache::result_cache::{ResultCache, ResultCacheConfig};
 use search_engine::corpus;
+use search_engine::crawler::{self, CrawlConfig};
 use search_engine::engine::{Engine, EngineConfig, QueryMode};
 use search_engine::grpc;
 use search_engine::index::builder::InMemoryIndex;
@@ -32,7 +33,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Crawl a website politely and write a JSONL corpus.
-    Crawl,
+    Crawl(CrawlArgs),
     /// Build an inverted index from a corpus.
     Index(IndexArgs),
     /// Run a query against an index.
@@ -43,6 +44,36 @@ enum Command {
     Bench,
     /// Measure retrieval quality on the Cranfield collection.
     Eval,
+}
+
+#[derive(Args)]
+struct CrawlArgs {
+    /// Start URL(s). The crawl stays on their host, under their directory.
+    #[arg(long = "seed", required = true)]
+    seeds: Vec<url::Url>,
+    /// Output corpus (JSONL).
+    #[arg(long)]
+    out: PathBuf,
+    /// Stop after saving this many pages.
+    #[arg(long, default_value_t = 300)]
+    max_pages: usize,
+    /// Minimum milliseconds between requests to the same host (raised to the
+    /// site's Crawl-delay if that is longer).
+    #[arg(long, default_value_t = 1000)]
+    delay_ms: u64,
+    /// Fetches in flight at once (still throttled per host).
+    #[arg(long, default_value_t = 4)]
+    concurrency: usize,
+    /// Skip URLs containing this substring (repeatable).
+    #[arg(long = "exclude")]
+    excludes: Vec<String>,
+    #[arg(long, default_value = crawler::DEFAULT_USER_AGENT)]
+    user_agent: String,
+    /// Pages larger than this are skipped.
+    #[arg(long, default_value_t = 5 * 1024 * 1024)]
+    max_body_bytes: usize,
+    #[arg(long, default_value_t = 30)]
+    timeout_secs: u64,
 }
 
 #[derive(Args)]
@@ -163,10 +194,35 @@ async fn main() -> Result<()> {
         Command::Index(args) => run_index(args),
         Command::Search(args) => run_search(args).await,
         Command::Serve(args) => run_serve(args).await,
-        Command::Crawl | Command::Bench | Command::Eval => {
+        Command::Crawl(args) => run_crawl(args).await,
+        Command::Bench | Command::Eval => {
             bail!("not implemented yet")
         }
     }
+}
+
+async fn run_crawl(args: CrawlArgs) -> Result<()> {
+    let out = args.out.clone();
+    let config = CrawlConfig {
+        seeds: args.seeds,
+        max_pages: args.max_pages,
+        delay: Duration::from_millis(args.delay_ms),
+        concurrency: args.concurrency,
+        user_agent: args.user_agent,
+        excludes: args.excludes,
+        max_body_bytes: args.max_body_bytes,
+        request_timeout: Duration::from_secs(args.timeout_secs),
+    };
+    let started = Instant::now();
+    let report = crawler::crawl(config, &out).await?;
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    println!(
+        "wrote {} pages to {} in {:.1}s",
+        report.pages_written,
+        out.display(),
+        started.elapsed().as_secs_f64()
+    );
+    Ok(())
 }
 
 fn run_index(args: IndexArgs) -> Result<()> {
