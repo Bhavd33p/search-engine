@@ -69,29 +69,33 @@ struct SearchArgs {
     #[arg(long)]
     any: bool,
     #[command(flatten)]
-    bm25: Bm25Args,
+    engine: EngineArgs,
     /// Print results as JSON.
     #[arg(long)]
     json: bool,
 }
 
 #[derive(Args, Clone, Copy)]
-struct Bm25Args {
+struct EngineArgs {
     /// BM25 term-frequency saturation.
     #[arg(long, default_value_t = 1.2)]
     bm25_k1: f64,
     /// BM25 length normalisation (0 = none, 1 = full).
     #[arg(long, default_value_t = 0.75)]
     bm25_b: f64,
+    /// Posting lists kept decoded in memory (LRU, counted in terms); 0 disables.
+    #[arg(long, default_value_t = 10_000)]
+    hot_terms: usize,
 }
 
-impl Bm25Args {
+impl EngineArgs {
     fn engine_config(self) -> EngineConfig {
         EngineConfig {
             bm25: Bm25 {
                 k1: self.bm25_k1,
                 b: self.bm25_b,
             },
+            hot_term_capacity: self.hot_terms,
         }
     }
 }
@@ -146,7 +150,7 @@ fn run_index(args: IndexArgs) -> Result<()> {
 }
 
 fn run_search(args: SearchArgs) -> Result<()> {
-    let engine = Engine::open(&args.index, args.bm25.engine_config())
+    let engine = Engine::open(&args.index, args.engine.engine_config())
         .with_context(|| format!("opening index {}", args.index.display()))?;
     let text = args.query.join(" ");
     let started = Instant::now();

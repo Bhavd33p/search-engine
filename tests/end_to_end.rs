@@ -163,3 +163,16 @@ fn stop_word_only_query_is_rejected() {
     assert!(engine.analyze("the AND of", QueryMode::Boolean).is_err());
     assert!(engine.analyze("rust AND (", QueryMode::Boolean).is_err());
 }
+
+#[test]
+fn repeated_queries_hit_the_hot_term_cache() {
+    let (_dir, engine) = build(rust_corpus(), Codec::VByte);
+    let query = engine.analyze("rust memory", QueryMode::Boolean).unwrap();
+    engine.search(&query, 10, RankerKind::Bm25).unwrap();
+    let cold = engine.hot_term_stats();
+    assert_eq!((cold.hits, cold.misses, cold.resident_terms), (0, 2, 2));
+
+    engine.search(&query, 10, RankerKind::Bm25).unwrap();
+    let warm = engine.hot_term_stats();
+    assert_eq!((warm.hits, warm.misses), (2, 2));
+}

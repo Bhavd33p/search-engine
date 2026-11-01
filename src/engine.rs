@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::analysis::Analyzer;
+use crate::cache::hot_terms::{HotTermCache, HotTermStats};
 use crate::index::postings::PostingList;
 use crate::index::store::{IndexReader, IndexStats, StoreError};
 use crate::query::eval::{PostingSource, matching_docs};
@@ -26,9 +27,20 @@ use crate::snippet::make_snippet;
 
 const SNIPPET_WORDS: usize = 30;
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct EngineConfig {
     pub bm25: Bm25,
+    /// Decoded posting lists kept in memory; 0 disables the hot-term cache.
+    pub hot_term_capacity: usize,
+}
+
+impl Default for EngineConfig {
+    fn default() -> Self {
+        Self {
+            bm25: Bm25::default(),
+            hot_term_capacity: 10_000,
+        }
+    }
 }
 
 /// How query text is interpreted.
@@ -79,6 +91,7 @@ impl From<ParseError> for SearchError {
 pub struct Engine {
     reader: IndexReader,
     analyzer: Analyzer,
+    hot_terms: HotTermCache,
     config: EngineConfig,
 }
 
@@ -87,6 +100,7 @@ impl Engine {
         Ok(Self {
             reader: IndexReader::open(path)?,
             analyzer: Analyzer::new(),
+            hot_terms: HotTermCache::new(config.hot_term_capacity),
             config,
         })
     }
@@ -97,6 +111,10 @@ impl Engine {
 
     pub fn reader(&self) -> &IndexReader {
         &self.reader
+    }
+
+    pub fn hot_term_stats(&self) -> HotTermStats {
+        self.hot_terms.stats()
     }
 
     /// Parses and analyses query text.
@@ -206,7 +224,7 @@ impl Engine {
     }
 
     fn load_postings(&self, term: &str) -> Result<Option<Arc<PostingList>>, StoreError> {
-        Ok(self.reader.postings(term)?.map(Arc::new))
+        self.hot_terms.get_or_load(term, || self.reader.postings(term))
     }
 }
 
